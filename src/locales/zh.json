@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "AgentManager",
+    "arrangeButton": "▦ 排列",
+    "arrangeButtonTitle": "将所有 iTerm 窗口整理成网格"
+  },
+  "empty": {
+    "title": "暂无活跃的 Claude 会话",
+    "hint": "在 iTerm 中启动一个 <1>claude</1> 会话，它会自动出现在这里。"
+  },
+  "card": {
+    "tooltip": "右键查看操作 · 双击跳转到对应的 iTerm 会话",
+    "badge": "{{count}} 条通知",
+    "status": {
+      "started": "运行中",
+      "needsInput": "等待输入",
+      "stopped": "已停止",
+      "ended": "已结束",
+      "unknown": "—"
+    },
+    "time": {
+      "justNow": "刚刚",
+      "secondsAgo": "{{count}} 秒前",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前"
+    }
+  },
+  "menu": {
+    "rename": "重命名…",
+    "jump": "跳转到 iTerm",
+    "arrangeAll": "整理所有 iTerm 窗口",
+    "dismiss": "移除",
+    "renamePrompt": "重命名会话"
+  },
+  "banner": {
+    "notInstalled": "Claude hook 未完全安装。",
+    "missingEvents": "缺少事件：{{events}}",
+    "scriptMissing": "Hook 脚本和 settings.json 配置都缺失。",
+    "install": "一键安装"
+  },
+  "toast": {
+    "installed": "Hook 已安装。请重启正在运行的 Claude 会话以生效。",
+    "installFailed": "安装失败：{{err}}",
+    "jumpFailed": "跳转失败：{{err}}",
+    "arrangeFailed": "排列失败：{{err}}",
+    "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}",
+    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）"
+  },
+  "language": {
+    "toggleToZh": "切换到中文",
+    "toggleToEn": "Switch to English"
+  }
+}

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useTranslation, Trans } from 'react-i18next'
 import { SessionCard } from './components/SessionCard'
 import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { SetupBanner } from './components/SetupBanner'
+import { currentLanguage, toggleLanguage } from './i18n'
 import type { ArrangeReport, HookStatus, SessionEntry } from './types'
 
 const REQUIRED_EVENTS = ['SessionStart', 'Stop', 'SessionEnd']
 
 export default function App() {
+  const { t, i18n } = useTranslation()
   const [sessions, setSessions] = useState<SessionEntry[]>([])
   const [hookStatus, setHookStatus] = useState<HookStatus | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -17,6 +20,7 @@ export default function App() {
     y: number
     items: MenuItem[]
   } | null>(null)
+  const [lang, setLang] = useState(currentLanguage())
   const toastTimer = useRef<number | null>(null)
 
   const showToast = useCallback((text: string) => {
@@ -61,6 +65,14 @@ export default function App() {
     }
   }, [refreshSessions, refreshHookStatus])
 
+  useEffect(() => {
+    const onChange = (next: string) => setLang(next.startsWith('zh') ? 'zh' : 'en')
+    i18n.on('languageChanged', onChange)
+    return () => {
+      i18n.off('languageChanged', onChange)
+    }
+  }, [i18n])
+
   const hookInstalled = useMemo(() => {
     if (!hookStatus) return true
     return (
@@ -72,12 +84,12 @@ export default function App() {
   const handleInstallHook = useCallback(async () => {
     try {
       await invoke('install_claude_hook')
-      showToast('Hook installed. Restart running Claude sessions to activate.')
+      showToast(t('toast.installed'))
       refreshHookStatus()
     } catch (err) {
-      showToast(`Install failed: ${err}`)
+      showToast(t('toast.installFailed', { err: String(err) }))
     }
-  }, [refreshHookStatus, showToast])
+  }, [refreshHookStatus, showToast, t])
 
   const handleRename = useCallback(
     async (sessionId: string, alias: string | null) => {
@@ -100,39 +112,44 @@ export default function App() {
       try {
         await invoke('jump_to_iterm', { sessionId })
       } catch (err) {
-        showToast(`Jump failed: ${err}`)
+        showToast(t('toast.jumpFailed', { err: String(err) }))
       }
     },
-    [showToast]
+    [showToast, t]
   )
 
   const handleArrangeAll = useCallback(async () => {
     try {
       const report = await invoke<ArrangeReport>('arrange_iterm_windows')
+      const key = report.skipped > 0 ? 'toast.arrangedWithSkipped' : 'toast.arranged'
       showToast(
-        `Arranged ${report.arranged} iTerm window(s) into ${report.cols}×${report.rows}` +
-          (report.skipped > 0 ? ` (${report.skipped} skipped)` : '')
+        t(key, {
+          count: report.arranged,
+          cols: report.cols,
+          rows: report.rows,
+          skipped: report.skipped,
+        })
       )
     } catch (err) {
-      showToast(`Arrange failed: ${err}`)
+      showToast(t('toast.arrangeFailed', { err: String(err) }))
     }
-  }, [showToast])
+  }, [showToast, t])
 
   const buildMenu = useCallback(
     (entry: SessionEntry): MenuItem[] => [
       {
         id: 'rename',
-        label: 'Rename…',
+        label: t('menu.rename'),
         onSelect: () => {
           const initial = entry.alias ?? ''
-          const next = window.prompt('Rename session', initial)
+          const next = window.prompt(t('menu.renamePrompt'), initial)
           if (next === null) return
           handleRename(entry.session_id, next.trim() ? next.trim() : null)
         },
       },
       {
         id: 'jump',
-        label: 'Jump to iTerm',
+        label: t('menu.jump'),
         onSelect: () => handleJump(entry.session_id),
         disabled:
           !entry.iterm_session_id || entry.iterm_session_id === 'unknown',
@@ -140,18 +157,18 @@ export default function App() {
       { id: 'sep', label: '', separator: true, onSelect: () => {} },
       {
         id: 'arrange',
-        label: 'Arrange all iTerm windows',
+        label: t('menu.arrangeAll'),
         onSelect: () => handleArrangeAll(),
       },
       { id: 'sep2', label: '', separator: true, onSelect: () => {} },
       {
         id: 'dismiss',
-        label: 'Dismiss',
+        label: t('menu.dismiss'),
         onSelect: () => handleDismiss(entry.session_id),
         danger: true,
       },
     ],
-    [handleRename, handleJump, handleArrangeAll, handleDismiss]
+    [handleRename, handleJump, handleArrangeAll, handleDismiss, t]
   )
 
   const openMenu = useCallback(
@@ -164,17 +181,31 @@ export default function App() {
 
   const closeMenu = useCallback(() => setMenu(null), [])
 
+  const handleToggleLang = useCallback(() => {
+    toggleLanguage()
+  }, [])
+
   return (
     <div className="app">
       <header className="app__header">
-        <h1>AgentManager</h1>
-        <button
-          className="toolbar-btn"
-          onClick={handleArrangeAll}
-          title="Arrange all iTerm windows into a grid"
-        >
-          ▦ Arrange
-        </button>
+        <h1>{t('app.title')}</h1>
+        <div className="app__header-actions">
+          <button
+            className="toolbar-btn"
+            onClick={handleArrangeAll}
+            title={t('app.arrangeButtonTitle')}
+          >
+            {t('app.arrangeButton')}
+          </button>
+          <button
+            className="toolbar-btn toolbar-btn--lang"
+            onClick={handleToggleLang}
+            title={t(lang === 'zh' ? 'language.toggleToEn' : 'language.toggleToZh')}
+            aria-label={t(lang === 'zh' ? 'language.toggleToEn' : 'language.toggleToZh')}
+          >
+            🌐 {lang === 'zh' ? 'EN' : '中'}
+          </button>
+        </div>
       </header>
 
       {!hookInstalled && hookStatus && (
@@ -184,9 +215,11 @@ export default function App() {
       <main className="app__main">
         {sessions.length === 0 ? (
           <div className="empty">
-            <p>No active Claude sessions.</p>
+            <p>{t('empty.title')}</p>
             <p className="empty__hint">
-              Start a <code>claude</code> session in iTerm and it will appear here.
+              <Trans i18nKey="empty.hint">
+                Start a <code>claude</code> session in iTerm and it will appear here.
+              </Trans>
             </p>
           </div>
         ) : (

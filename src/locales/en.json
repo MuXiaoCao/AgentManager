@@ -1,0 +1,55 @@
+{
+  "app": {
+    "title": "AgentManager",
+    "arrangeButton": "▦ Arrange",
+    "arrangeButtonTitle": "Arrange all iTerm windows into a grid"
+  },
+  "empty": {
+    "title": "No active Claude sessions.",
+    "hint": "Start a <1>claude</1> session in iTerm and it will appear here."
+  },
+  "card": {
+    "tooltip": "Right-click for actions · double-click to jump to iTerm",
+    "badge": "{{count}} notification",
+    "badge_other": "{{count}} notifications",
+    "status": {
+      "started": "Started",
+      "needsInput": "Needs input",
+      "stopped": "Stopped",
+      "ended": "Ended",
+      "unknown": "—"
+    },
+    "time": {
+      "justNow": "just now",
+      "secondsAgo": "{{count}}s ago",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    }
+  },
+  "menu": {
+    "rename": "Rename…",
+    "jump": "Jump to iTerm",
+    "arrangeAll": "Arrange all iTerm windows",
+    "dismiss": "Dismiss",
+    "renamePrompt": "Rename session"
+  },
+  "banner": {
+    "notInstalled": "Claude hook not fully installed.",
+    "missingEvents": "Missing events: {{events}}",
+    "scriptMissing": "Hook script and settings.json entries are missing.",
+    "install": "Install hook"
+  },
+  "toast": {
+    "installed": "Hook installed. Restart running Claude sessions to activate.",
+    "installFailed": "Install failed: {{err}}",
+    "jumpFailed": "Jump failed: {{err}}",
+    "arrangeFailed": "Arrange failed: {{err}}",
+    "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}",
+    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)"
+  },
+  "language": {
+    "toggleToZh": "切换到中文",
+    "toggleToEn": "Switch to English"
+  }
+}

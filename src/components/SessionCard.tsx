@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { SessionEntry } from '../types'
 
 interface Props {
@@ -7,47 +8,68 @@ interface Props {
   onDoubleClick: () => void
 }
 
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime()
-  const now = Date.now()
-  const diff = Math.max(0, Math.round((now - then) / 1000))
-  if (diff < 5) return 'just now'
-  if (diff < 60) return `${diff}s ago`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
+type Tone = 'active' | 'idle' | 'done'
 
-function eventLabel(event: string): { text: string; tone: 'active' | 'idle' | 'done' } {
+function eventTone(event: string): Tone {
   switch (event) {
     case 'sessionstart':
-      return { text: 'Started', tone: 'active' }
+      return 'active'
     case 'notification':
-      return { text: 'Needs input', tone: 'idle' }
+      return 'idle'
     case 'stop':
-      return { text: 'Stopped', tone: 'done' }
     case 'sessionend':
-      return { text: 'Ended', tone: 'done' }
+      return 'done'
     default:
-      return { text: event || '—', tone: 'idle' }
+      return 'idle'
   }
 }
 
+function eventKey(event: string): string {
+  switch (event) {
+    case 'sessionstart':
+      return 'card.status.started'
+    case 'notification':
+      return 'card.status.needsInput'
+    case 'stop':
+      return 'card.status.stopped'
+    case 'sessionend':
+      return 'card.status.ended'
+    default:
+      return 'card.status.unknown'
+  }
+}
+
+function useRelativeTime(iso: string): string {
+  const { t } = useTranslation()
+  const then = new Date(iso).getTime()
+  const now = Date.now()
+  const diff = Math.max(0, Math.round((now - then) / 1000))
+  if (diff < 5) return t('card.time.justNow')
+  if (diff < 60) return t('card.time.secondsAgo', { count: diff })
+  if (diff < 3600) return t('card.time.minutesAgo', { count: Math.floor(diff / 60) })
+  if (diff < 86400) return t('card.time.hoursAgo', { count: Math.floor(diff / 3600) })
+  return t('card.time.daysAgo', { count: Math.floor(diff / 86400) })
+}
+
 export function SessionCard({ entry, onContextMenu, onDoubleClick }: Props) {
+  const { t } = useTranslation()
+
   const title = useMemo(() => {
     if (entry.alias && entry.alias.trim()) return entry.alias
     const parts = entry.cwd.split('/').filter(Boolean)
     return parts[parts.length - 1] ?? entry.cwd
   }, [entry.alias, entry.cwd])
 
-  const { text: statusText, tone } = eventLabel(entry.last_event)
+  const tone = eventTone(entry.last_event)
+  const statusText = t(eventKey(entry.last_event))
+  const relTime = useRelativeTime(entry.last_updated)
 
   return (
     <article
       className={`card card--${tone}`}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
-      title="Right-click for actions · double-click to jump to iTerm"
+      title={t('card.tooltip')}
     >
       <div className="card__top">
         <span className="card__title">{title}</span>
@@ -58,11 +80,11 @@ export function SessionCard({ entry, onContextMenu, onDoubleClick }: Props) {
       </div>
       <div className="card__meta">
         <span className="card__agent">{entry.agent}</span>
-        <span className="card__time">{relativeTime(entry.last_updated)}</span>
+        <span className="card__time">{relTime}</span>
       </div>
       {entry.notification_count > 0 && (
         <div className="card__badge">
-          {entry.notification_count} notification{entry.notification_count === 1 ? '' : 's'}
+          {t('card.badge', { count: entry.notification_count })}
         </div>
       )}
     </article>

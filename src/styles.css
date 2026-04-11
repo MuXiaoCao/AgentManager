@@ -58,6 +58,17 @@ body,
   letter-spacing: 0.2px;
 }
 
+.app__header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.toolbar-btn--lang {
+  min-width: 48px;
+  text-align: center;
+}
+
 .toolbar-btn {
   font-size: 12px;
   padding: 5px 10px;

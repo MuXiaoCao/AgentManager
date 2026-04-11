@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { HookStatus } from '../types'
 
 interface Props {
@@ -6,21 +7,22 @@ interface Props {
 }
 
 export function SetupBanner({ status, onInstall }: Props) {
+  const { t } = useTranslation()
   const missing = ['SessionStart', 'Stop', 'SessionEnd'].filter(
     (e) => !status.installed_events.includes(e)
   )
   return (
     <div className="setup-banner">
       <div className="setup-banner__text">
-        <strong>Claude hook not fully installed.</strong>
+        <strong>{t('banner.notInstalled')}</strong>{' '}
         {status.script_installed ? (
-          <span> Missing events: {missing.join(', ')}</span>
+          <span>{t('banner.missingEvents', { events: missing.join(', ') })}</span>
         ) : (
-          <span> Hook script and settings.json entries are missing.</span>
+          <span>{t('banner.scriptMissing')}</span>
         )}
       </div>
       <button className="setup-banner__btn" onClick={onInstall}>
-        Install hook
+        {t('banner.install')}
       </button>
     </div>
   )
