@@ -13,8 +13,8 @@
     "badge": "{{count}} 条通知",
     "status": {
       "started": "运行中",
+      "idle": "空闲",
       "needsInput": "等待输入",
-      "stopped": "已停止",
       "ended": "已结束",
       "unknown": "—"
     },
@@ -45,8 +45,7 @@
     "jumpFailed": "跳转失败：{{err}}",
     "arrangeFailed": "排列失败：{{err}}",
     "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）",
-    "itermRenameFailed": "别名已保存，但 iTerm 重命名失败：{{err}}"
+    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）"
   },
   "language": {
     "toggleToZh": "切换到中文",

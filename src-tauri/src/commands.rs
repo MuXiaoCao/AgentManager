@@ -1,4 +1,3 @@
-use serde::Serialize;
 use tauri::{command, Manager, State};
 
 use crate::hook_install::{self, HookInstallReport, HookStatus};
@@ -15,51 +14,15 @@ pub fn dismiss_session(state: State<'_, AppState>, session_id: String) -> bool {
     state.dismiss(&session_id)
 }
 
-#[derive(Debug, Serialize)]
-pub struct RenameReport {
-    pub alias_saved: bool,
-    pub iterm_renamed: bool,
-    pub iterm_error: Option<String>,
-}
-
-/// Persist an alias for `session_id` and, if we have a live iTerm session
-/// id, push the same name to iTerm so the tab label matches.
+/// Persist a display alias for `session_id`. This is purely cosmetic —
+/// it only affects the card title inside AgentManager, not the iTerm tab.
 #[command]
 pub fn rename_session(
     state: State<'_, AppState>,
     session_id: String,
     alias: Option<String>,
-) -> RenameReport {
-    state.set_alias(&session_id, alias.clone());
-
-    let trimmed: Option<String> = alias
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-
-    let iterm_id: Option<String> = state
-        .sessions
-        .get(&session_id)
-        .map(|r| r.value().iterm_session_id.clone())
-        .filter(|id| !id.is_empty() && id != "unknown");
-
-    let (iterm_renamed, iterm_error) = match (trimmed, iterm_id) {
-        (Some(name), Some(id)) => match iterm::set_session_name(&id, &name) {
-            Ok(()) => (true, None),
-            Err(e) => {
-                log::warn!("iTerm rename failed for {session_id}: {e}");
-                (false, Some(e.to_string()))
-            }
-        },
-        _ => (false, None),
-    };
-
-    RenameReport {
-        alias_saved: true,
-        iterm_renamed,
-        iterm_error,
-    }
+) {
+    state.set_alias(&session_id, alias);
 }
 
 #[command]

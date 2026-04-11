@@ -14,8 +14,8 @@
     "badge_other": "{{count}} notifications",
     "status": {
       "started": "Started",
+      "idle": "Idle",
       "needsInput": "Needs input",
-      "stopped": "Stopped",
       "ended": "Ended",
       "unknown": "—"
     },
@@ -46,8 +46,7 @@
     "jumpFailed": "Jump failed: {{err}}",
     "arrangeFailed": "Arrange failed: {{err}}",
     "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)",
-    "itermRenameFailed": "Saved alias, but iTerm rename failed: {{err}}"
+    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)"
   },
   "language": {
     "toggleToZh": "切换到中文",

@@ -5,6 +5,8 @@ import type { SessionEntry } from '../types'
 interface Props {
   entry: SessionEntry
   isRenaming: boolean
+  isSelected: boolean
+  onClick: () => void
   onContextMenu: (ev: React.MouseEvent) => void
   onDoubleClick: () => void
   onCommitRename: (newAlias: string | null) => void
@@ -13,13 +15,16 @@ interface Props {
 
 type Tone = 'active' | 'idle' | 'done'
 
+// `sessionstart` and `stop` both mean the session is alive — the first is
+// the initial state, the second fires between turns when Claude is waiting
+// for the next user prompt. `sessionend` is the only real terminator.
 function eventTone(event: string): Tone {
   switch (event) {
     case 'sessionstart':
+    case 'stop':
       return 'active'
     case 'notification':
       return 'idle'
-    case 'stop':
     case 'sessionend':
       return 'done'
     default:
@@ -31,10 +36,10 @@ function eventKey(event: string): string {
   switch (event) {
     case 'sessionstart':
       return 'card.status.started'
+    case 'stop':
+      return 'card.status.idle'
     case 'notification':
       return 'card.status.needsInput'
-    case 'stop':
-      return 'card.status.stopped'
     case 'sessionend':
       return 'card.status.ended'
     default:
@@ -57,6 +62,8 @@ function useRelativeTime(iso: string): string {
 export function SessionCard({
   entry,
   isRenaming,
+  isSelected,
+  onClick,
   onContextMenu,
   onDoubleClick,
   onCommitRename,
@@ -78,10 +85,7 @@ export function SessionCard({
 
   useEffect(() => {
     if (isRenaming) {
-      // Start with the current alias (if any), else the fallback title so the
-      // user can edit from a meaningful default.
       setDraft(entry.alias ?? fallbackTitle)
-      // Defer focus + select so the input is mounted first.
       window.requestAnimationFrame(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
@@ -98,9 +102,18 @@ export function SessionCard({
   const statusText = t(eventKey(entry.last_event))
   const relTime = useRelativeTime(entry.last_updated)
 
+  const className = [
+    'card',
+    `card--${tone}`,
+    isSelected ? 'card--selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <article
-      className={`card card--${tone}`}
+      className={className}
+      onClick={onClick}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
       title={t('card.tooltip')}

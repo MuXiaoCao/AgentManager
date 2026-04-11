@@ -29,9 +29,3 @@ export interface ArrangeReport {
   cols: number
   rows: number
 }
-
-export interface RenameReport {
-  alias_saved: boolean
-  iterm_renamed: boolean
-  iterm_error: string | null
-}
