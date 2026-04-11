@@ -17,14 +17,26 @@ fn run_osascript(script: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// `$ITERM_SESSION_ID` is exported as `wNtNpN:<UUID>` where the prefix encodes
+/// the window/tab/pane indices at the moment the shell was launched. iTerm's
+/// AppleScript `unique id` only returns the bare UUID, so we strip everything
+/// before the colon before using the value in a comparison.
+fn normalize(raw: &str) -> &str {
+    raw.split_once(':').map(|(_, rest)| rest).unwrap_or(raw)
+}
+
+fn is_blank(id: &str) -> bool {
+    id.is_empty() || id == "unknown"
+}
+
 /// Rename an iTerm session's tab label. iTerm2's `name` property is the
 /// string shown in the tab bar; setting it disables the session's auto-name
 /// override for the rest of the session.
 pub fn set_session_name(iterm_session_id: &str, name: &str) -> Result<()> {
-    if iterm_session_id.is_empty() || iterm_session_id == "unknown" {
+    if is_blank(iterm_session_id) {
         return Err(anyhow!("no iTerm session id recorded"));
     }
-    let sid = iterm_session_id.replace('"', "\\\"");
+    let sid = normalize(iterm_session_id).replace('"', "\\\"");
     // Escape backslashes first, then quotes, then newlines -> spaces.
     let safe_name = name
         .replace('\\', "\\\\")
@@ -62,11 +74,10 @@ end tell
 /// Activate iTerm and focus the tab/session whose session id matches.
 /// `iTerm2` AppleScript exposes session ids that match $ITERM_SESSION_ID.
 pub fn jump_to(iterm_session_id: &str) -> Result<()> {
-    if iterm_session_id.is_empty() || iterm_session_id == "unknown" {
+    if is_blank(iterm_session_id) {
         return Err(anyhow!("no iTerm session id recorded"));
     }
-    // escape quotes just in case
-    let sid = iterm_session_id.replace('"', "\\\"");
+    let sid = normalize(iterm_session_id).replace('"', "\\\"");
     let script = format!(
         r#"
 tell application "iTerm"
@@ -110,11 +121,11 @@ pub struct TileRegion {
 /// The grid is laid out as `cols × rows` where `cols = ceil(sqrt(n))`.
 /// Sessions whose iTerm window can't be found are skipped silently.
 pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<ArrangeReport> {
-    // Filter out empty/placeholder ids up front.
+    // Filter out empty/placeholder ids and strip the wNtNpN: prefix.
     let live_ids: Vec<&str> = session_ids
         .iter()
-        .map(|s| s.as_str())
-        .filter(|s| !s.is_empty() && *s != "unknown")
+        .filter(|s| !is_blank(s))
+        .map(|s| normalize(s.as_str()))
         .collect();
     if live_ids.is_empty() {
         return Ok(ArrangeReport {
@@ -212,4 +223,38 @@ pub struct ArrangeReport {
     pub skipped: usize,
     pub cols: usize,
     pub rows: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_strips_iterm_prefix() {
+        assert_eq!(
+            normalize("w0t0p0:F103A515-F810-460B-B67A-34B49BAEE62F"),
+            "F103A515-F810-460B-B67A-34B49BAEE62F"
+        );
+        assert_eq!(
+            normalize("w12t3p4:AD7F157A-1632-4413-AA05-5BA8554D7709"),
+            "AD7F157A-1632-4413-AA05-5BA8554D7709"
+        );
+    }
+
+    #[test]
+    fn normalize_passes_through_plain_uuid() {
+        assert_eq!(
+            normalize("264E7062-5F8C-4379-836D-F3E5F782D297"),
+            "264E7062-5F8C-4379-836D-F3E5F782D297"
+        );
+    }
+
+    #[test]
+    fn normalize_handles_empty_and_unknown() {
+        assert_eq!(normalize(""), "");
+        assert_eq!(normalize("unknown"), "unknown");
+        assert!(is_blank(""));
+        assert!(is_blank("unknown"));
+        assert!(!is_blank("w0t0p0:abc"));
+    }
 }
