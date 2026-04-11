@@ -1,11 +1,14 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionEntry } from '../types'
 
 interface Props {
   entry: SessionEntry
+  isRenaming: boolean
   onContextMenu: (ev: React.MouseEvent) => void
   onDoubleClick: () => void
+  onCommitRename: (newAlias: string | null) => void
+  onCancelRename: () => void
 }
 
 type Tone = 'active' | 'idle' | 'done'
@@ -51,14 +54,45 @@ function useRelativeTime(iso: string): string {
   return t('card.time.daysAgo', { count: Math.floor(diff / 86400) })
 }
 
-export function SessionCard({ entry, onContextMenu, onDoubleClick }: Props) {
+export function SessionCard({
+  entry,
+  isRenaming,
+  onContextMenu,
+  onDoubleClick,
+  onCommitRename,
+  onCancelRename,
+}: Props) {
   const { t } = useTranslation()
+  const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const fallbackTitle = useMemo(() => {
+    const parts = entry.cwd.split('/').filter(Boolean)
+    return parts[parts.length - 1] ?? entry.cwd
+  }, [entry.cwd])
 
   const title = useMemo(() => {
     if (entry.alias && entry.alias.trim()) return entry.alias
-    const parts = entry.cwd.split('/').filter(Boolean)
-    return parts[parts.length - 1] ?? entry.cwd
-  }, [entry.alias, entry.cwd])
+    return fallbackTitle
+  }, [entry.alias, fallbackTitle])
+
+  useEffect(() => {
+    if (isRenaming) {
+      // Start with the current alias (if any), else the fallback title so the
+      // user can edit from a meaningful default.
+      setDraft(entry.alias ?? fallbackTitle)
+      // Defer focus + select so the input is mounted first.
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      })
+    }
+  }, [isRenaming, entry.alias, fallbackTitle])
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    onCommitRename(trimmed.length > 0 ? trimmed : null)
+  }
 
   const tone = eventTone(entry.last_event)
   const statusText = t(eventKey(entry.last_event))
@@ -72,7 +106,29 @@ export function SessionCard({ entry, onContextMenu, onDoubleClick }: Props) {
       title={t('card.tooltip')}
     >
       <div className="card__top">
-        <span className="card__title">{title}</span>
+        {isRenaming ? (
+          <input
+            ref={inputRef}
+            className="card__title-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commit()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                onCancelRename()
+              }
+            }}
+            onBlur={commit}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="card__title">{title}</span>
+        )}
         <span className={`card__status card__status--${tone}`}>{statusText}</span>
       </div>
       <div className="card__cwd" title={entry.cwd}>

@@ -17,6 +17,48 @@ fn run_osascript(script: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Rename an iTerm session's tab label. iTerm2's `name` property is the
+/// string shown in the tab bar; setting it disables the session's auto-name
+/// override for the rest of the session.
+pub fn set_session_name(iterm_session_id: &str, name: &str) -> Result<()> {
+    if iterm_session_id.is_empty() || iterm_session_id == "unknown" {
+        return Err(anyhow!("no iTerm session id recorded"));
+    }
+    let sid = iterm_session_id.replace('"', "\\\"");
+    // Escape backslashes first, then quotes, then newlines -> spaces.
+    let safe_name = name
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', " ")
+        .replace('\r', " ");
+    let script = format!(
+        r#"
+tell application "iTerm"
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        if unique id of s is "{sid}" then
+          set name of s to "{name}"
+          return "ok"
+        end if
+      end repeat
+    end repeat
+  end repeat
+  return "not-found"
+end tell
+"#,
+        sid = sid,
+        name = safe_name
+    );
+    let out = run_osascript(&script)?;
+    if out.trim() == "not-found" {
+        return Err(anyhow!(
+            "iTerm session {iterm_session_id} not found (maybe closed?)"
+        ));
+    }
+    Ok(())
+}
+
 /// Activate iTerm and focus the tab/session whose session id matches.
 /// `iTerm2` AppleScript exposes session ids that match $ITERM_SESSION_ID.
 pub fn jump_to(iterm_session_id: &str) -> Result<()> {

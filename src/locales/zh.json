@@ -45,7 +45,8 @@
     "jumpFailed": "跳转失败：{{err}}",
     "arrangeFailed": "排列失败：{{err}}",
     "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）"
+    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）",
+    "itermRenameFailed": "别名已保存，但 iTerm 重命名失败：{{err}}"
   },
   "language": {
     "toggleToZh": "切换到中文",

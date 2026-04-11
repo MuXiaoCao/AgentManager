@@ -6,7 +6,12 @@ import { SessionCard } from './components/SessionCard'
 import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { SetupBanner } from './components/SetupBanner'
 import { currentLanguage, toggleLanguage } from './i18n'
-import type { ArrangeReport, HookStatus, SessionEntry } from './types'
+import type {
+  ArrangeReport,
+  HookStatus,
+  RenameReport,
+  SessionEntry,
+} from './types'
 
 const REQUIRED_EVENTS = ['SessionStart', 'Stop', 'SessionEnd']
 
@@ -21,6 +26,7 @@ export default function App() {
     items: MenuItem[]
   } | null>(null)
   const [lang, setLang] = useState(currentLanguage())
+  const [renamingId, setRenamingId] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
 
   const showToast = useCallback((text: string) => {
@@ -91,13 +97,30 @@ export default function App() {
     }
   }, [refreshHookStatus, showToast, t])
 
-  const handleRename = useCallback(
+  const handleCommitRename = useCallback(
     async (sessionId: string, alias: string | null) => {
-      await invoke('rename_session', { sessionId, alias })
+      setRenamingId(null)
+      try {
+        const report = await invoke<RenameReport>('rename_session', {
+          sessionId,
+          alias,
+        })
+        if (report.iterm_error) {
+          showToast(
+            t('toast.itermRenameFailed', { err: String(report.iterm_error) })
+          )
+        }
+      } catch (err) {
+        showToast(String(err))
+      }
       refreshSessions()
     },
-    [refreshSessions]
+    [refreshSessions, showToast, t]
   )
+
+  const handleCancelRename = useCallback(() => {
+    setRenamingId(null)
+  }, [])
 
   const handleDismiss = useCallback(
     async (sessionId: string) => {
@@ -140,12 +163,7 @@ export default function App() {
       {
         id: 'rename',
         label: t('menu.rename'),
-        onSelect: () => {
-          const initial = entry.alias ?? ''
-          const next = window.prompt(t('menu.renamePrompt'), initial)
-          if (next === null) return
-          handleRename(entry.session_id, next.trim() ? next.trim() : null)
-        },
+        onSelect: () => setRenamingId(entry.session_id),
       },
       {
         id: 'jump',
@@ -168,7 +186,7 @@ export default function App() {
         danger: true,
       },
     ],
-    [handleRename, handleJump, handleArrangeAll, handleDismiss, t]
+    [handleJump, handleArrangeAll, handleDismiss, t]
   )
 
   const openMenu = useCallback(
@@ -227,8 +245,11 @@ export default function App() {
             <SessionCard
               key={s.session_id}
               entry={s}
+              isRenaming={renamingId === s.session_id}
               onContextMenu={(ev) => openMenu(s, ev)}
               onDoubleClick={() => handleJump(s.session_id)}
+              onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
+              onCancelRename={handleCancelRename}
             />
           ))
         )}

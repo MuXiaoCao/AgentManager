@@ -144,6 +144,25 @@ body,
   white-space: nowrap;
 }
 
+.card__title-input {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  margin-right: 6px;
+  font-family: inherit;
+}
+
+.card__title-input:focus {
+  box-shadow: 0 0 0 2px rgba(106, 164, 255, 0.25);
+}
+
 .card__status {
   font-size: 10px;
   text-transform: uppercase;

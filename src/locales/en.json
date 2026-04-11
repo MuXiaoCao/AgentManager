@@ -46,7 +46,8 @@
     "jumpFailed": "Jump failed: {{err}}",
     "arrangeFailed": "Arrange failed: {{err}}",
     "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)"
+    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)",
+    "itermRenameFailed": "Saved alias, but iTerm rename failed: {{err}}"
   },
   "language": {
     "toggleToZh": "切换到中文",

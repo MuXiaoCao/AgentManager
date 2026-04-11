@@ -1,3 +1,4 @@
+use serde::Serialize;
 use tauri::{command, Manager, State};
 
 use crate::hook_install::{self, HookInstallReport, HookStatus};
@@ -14,14 +15,51 @@ pub fn dismiss_session(state: State<'_, AppState>, session_id: String) -> bool {
     state.dismiss(&session_id)
 }
 
+#[derive(Debug, Serialize)]
+pub struct RenameReport {
+    pub alias_saved: bool,
+    pub iterm_renamed: bool,
+    pub iterm_error: Option<String>,
+}
+
+/// Persist an alias for `session_id` and, if we have a live iTerm session
+/// id, push the same name to iTerm so the tab label matches.
 #[command]
 pub fn rename_session(
     state: State<'_, AppState>,
     session_id: String,
     alias: Option<String>,
-) -> Result<(), String> {
-    state.set_alias(&session_id, alias);
-    Ok(())
+) -> RenameReport {
+    state.set_alias(&session_id, alias.clone());
+
+    let trimmed: Option<String> = alias
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let iterm_id: Option<String> = state
+        .sessions
+        .get(&session_id)
+        .map(|r| r.value().iterm_session_id.clone())
+        .filter(|id| !id.is_empty() && id != "unknown");
+
+    let (iterm_renamed, iterm_error) = match (trimmed, iterm_id) {
+        (Some(name), Some(id)) => match iterm::set_session_name(&id, &name) {
+            Ok(()) => (true, None),
+            Err(e) => {
+                log::warn!("iTerm rename failed for {session_id}: {e}");
+                (false, Some(e.to_string()))
+            }
+        },
+        _ => (false, None),
+    };
+
+    RenameReport {
+        alias_saved: true,
+        iterm_renamed,
+        iterm_error,
+    }
 }
 
 #[command]
@@ -48,7 +86,6 @@ pub fn arrange_iterm_windows(
         .map(|s| s.iterm_session_id)
         .collect();
 
-    // Compute the rectangle covering the area right of our main window.
     let region = compute_region(&app).map_err(|e| e.to_string())?;
     iterm::arrange_windows(&iterm_ids, region).map_err(|e| e.to_string())
 }
@@ -66,20 +103,14 @@ fn compute_region(app: &tauri::AppHandle) -> anyhow::Result<TileRegion> {
     let mon_pos: PhysicalPosition<i32> = *monitor.position();
     let mon_size = monitor.size();
 
-    // AppleScript uses logical (points) coordinates. Tauri monitor values are
-    // physical pixels on macOS, so divide by scale.
     let mon_x = (mon_pos.x as f64) / scale;
     let mon_y = (mon_pos.y as f64) / scale;
     let mon_w = (mon_size.width as f64) / scale;
     let mon_h = (mon_size.height as f64) / scale;
 
-    // Main window sits on the left. Use the window's logical outer size so the
-    // region starts right after it.
     let main_outer = window.outer_size().unwrap_or_default();
     let main_w = (main_outer.width as f64) / scale;
 
-    // Reserve a 25-point top inset for the macOS menu bar if the monitor starts
-    // at logical y = 0.
     let top_inset = if mon_y == 0.0 { 25.0 } else { 0.0 };
 
     let region_x = (mon_x + main_w) as i32;
