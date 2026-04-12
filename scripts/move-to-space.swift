@@ -1,75 +1,85 @@
 #!/usr/bin/env swift
-// move-to-space — Moves all windows of <target_pid> to the same macOS Space
-// as <reference_pid>'s window. This avoids relying on CGSGetActiveSpace which
-// can return the wrong space if AppleEvents or app activation caused a space
-// switch before this helper runs.
-//
-// Usage: move-to-space <reference_pid> <target_pid>
-//   reference_pid = AgentManager's PID (determines the destination Space)
-//   target_pid    = iTerm's PID (windows to move)
-
 import Foundation
 import CoreGraphics
-
-// MARK: – Private CGS declarations (stable since macOS 10.10, used by yabai/Rectangle/Amethyst)
 
 @_silgen_name("CGSMainConnectionID")
 func CGSMainConnectionID() -> Int32
 
-@_silgen_name("CGSAddWindowsToSpaces")
-func CGSAddWindowsToSpaces(_ conn: Int32, _ windows: NSArray, _ spaces: NSArray) -> Int32
-
-@_silgen_name("CGSRemoveWindowsFromSpaces")
-func CGSRemoveWindowsFromSpaces(_ conn: Int32, _ windows: NSArray, _ spaces: NSArray) -> Int32
-
 @_silgen_name("CGSCopySpacesForWindows")
 func CGSCopySpacesForWindows(_ conn: Int32, _ mask: Int32, _ windows: NSArray) -> NSArray?
 
-// MARK: – Main
+@_silgen_name("CGSMoveWindowsToManagedSpace")
+func CGSMoveWindowsToManagedSpace(_ conn: Int32, _ windows: NSArray, _ space: Int)
+
+@_silgen_name("CGSGetActiveSpace")
+func CGSGetActiveSpace(_ conn: Int32) -> Int
+
+@_silgen_name("CGSCopyManagedDisplayForWindow")
+func CGSCopyManagedDisplayForWindow(_ conn: Int32, _ wid: Int32) -> CFString?
+
+@_silgen_name("CGSManagedDisplayGetCurrentSpace")
+func CGSManagedDisplayGetCurrentSpace(_ conn: Int32, _ display: CFString) -> Int
+
+func log(_ msg: String) { fputs("[move-to-space] \(msg)\n", stderr) }
 
 guard CommandLine.arguments.count >= 3,
       let referencePid = Int32(CommandLine.arguments[1]),
       let targetPid = Int32(CommandLine.arguments[2]) else {
-    fputs("usage: move-to-space <reference_pid> <target_pid>\n", stderr)
+    log("usage: move-to-space <reference_pid> <target_pid>")
     exit(1)
 }
 
 let conn = CGSMainConnectionID()
+let globalActiveSpace = CGSGetActiveSpace(conn)
+log("conn=\(conn) globalActiveSpace=\(globalActiveSpace)")
 
 guard let allWindows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
-    fputs("failed to list windows\n", stderr)
-    exit(1)
+    log("ERROR: CGWindowListCopyWindowInfo returned nil"); exit(1)
 }
 
-// Step 1: find the reference app's (AgentManager) window and determine its Space.
-var destSpace: Int? = nil
+// Step 1: find reference (AgentManager) window → determine target Space via TWO methods.
+var destSpaceFromCopy: Int? = nil
+var destSpaceFromManaged: Int? = nil
+var refWid: Int32? = nil
+
 for w in allWindows {
     guard let pid = w[kCGWindowOwnerPID as String] as? Int32, pid == referencePid,
           let wid = w[kCGWindowNumber as String] as? Int32,
-          let layer = w[kCGWindowLayer as String] as? Int32, layer == 0  // normal windows only
+          let layer = w[kCGWindowLayer as String] as? Int32, layer == 0
     else { continue }
 
     let widArray: NSArray = [wid as NSNumber]
-    if let spaces = CGSCopySpacesForWindows(conn, 0x7, widArray) {
-        for s in spaces {
-            if let spaceId = s as? Int {
-                destSpace = spaceId
-                break
-            }
+    let spacesFromCopy = (CGSCopySpacesForWindows(conn, 0x7, widArray) as? [Int]) ?? []
+
+    if let displayUUID = CGSCopyManagedDisplayForWindow(conn, wid) {
+        let managedSpace = CGSManagedDisplayGetCurrentSpace(conn, displayUUID)
+        log("ref wid=\(wid) spacesFromCopy=\(spacesFromCopy) displayUUID=\(displayUUID) managedCurrentSpace=\(managedSpace)")
+        if destSpaceFromManaged == nil {
+            destSpaceFromManaged = managedSpace
         }
+    } else {
+        log("ref wid=\(wid) spacesFromCopy=\(spacesFromCopy) (no display UUID)")
     }
-    if destSpace != nil { break }
+
+    if !spacesFromCopy.isEmpty && destSpaceFromCopy == nil {
+        destSpaceFromCopy = spacesFromCopy.first
+        refWid = wid
+    }
 }
 
-guard let targetSpace = destSpace else {
-    fputs("could not determine reference window's Space\n", stderr)
-    exit(1)
+// Prefer the space from CGSCopySpacesForWindows (directly tied to the window).
+// Fall back to managed display current space if Copy returned empty.
+let targetSpace = destSpaceFromCopy ?? destSpaceFromManaged
+
+guard let space = targetSpace else {
+    log("ERROR: could not determine reference window's Space"); exit(1)
 }
+log("chosen targetSpace=\(space) (fromCopy=\(destSpaceFromCopy ?? -1) fromManaged=\(destSpaceFromManaged ?? -1))")
 
-let destSpaces: NSArray = [targetSpace as NSNumber]
-
-// Step 2: move every target app's (iTerm) window to that Space.
+// Step 2: move target (iTerm) windows.
 var moved = 0
+var verified = 0
+var failed = 0
 for w in allWindows {
     guard let pid = w[kCGWindowOwnerPID as String] as? Int32, pid == targetPid,
           let wid = w[kCGWindowNumber as String] as? Int32,
@@ -77,21 +87,26 @@ for w in allWindows {
     else { continue }
 
     let widArray: NSArray = [wid as NSNumber]
+    let before = (CGSCopySpacesForWindows(conn, 0x7, widArray) as? [Int]) ?? []
 
-    if let currentSpaces = CGSCopySpacesForWindows(conn, 0x7, widArray), currentSpaces.count > 0 {
-        // Check if already on the target space
-        var alreadyThere = false
-        for s in currentSpaces {
-            if let spaceId = s as? Int, spaceId == targetSpace {
-                alreadyThere = true
-                break
-            }
-        }
-        if alreadyThere { moved += 1; continue }
-        CGSRemoveWindowsFromSpaces(conn, widArray, currentSpaces)
+    if before.contains(space) {
+        log("wid=\(wid) already on space \(space), skip")
+        moved += 1; continue
     }
-    CGSAddWindowsToSpaces(conn, widArray, destSpaces)
+
+    CGSMoveWindowsToManagedSpace(conn, widArray, space)
+
+    // Verify: is the window actually on the target space now?
+    let after = (CGSCopySpacesForWindows(conn, 0x7, widArray) as? [Int]) ?? []
+    if after.contains(space) {
+        log("wid=\(wid) ✓ moved from=\(before) to=\(after)")
+        verified += 1
+    } else {
+        log("wid=\(wid) ✗ FAILED from=\(before) still=\(after)")
+        failed += 1
+    }
     moved += 1
 }
 
-print("\(moved)")
+log("done: moved=\(moved) verified=\(verified) failed=\(failed)")
+print("\(moved),\(verified),\(failed)")

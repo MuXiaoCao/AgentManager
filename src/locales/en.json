@@ -64,8 +64,8 @@
     "installFailed": "Install failed: {{err}}",
     "jumpFailed": "Jump failed: {{err}}",
     "arrangeFailed": "Arrange failed: {{err}}",
-    "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)",
+    "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}. If windows aren't visible, they may be on another desktop — move them here first.",
+    "arrangedWithSkipped": "Arranged {{count}} window(s) into {{cols}}×{{rows}}, {{skipped}} skipped. Windows on other desktops must be moved here manually.",
     "reopened": "Reopening session in a new iTerm window…",
     "reopenFailed": "Reopen failed: {{err}}"
   },

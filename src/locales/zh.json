@@ -63,8 +63,8 @@
     "installFailed": "安装失败：{{err}}",
     "jumpFailed": "跳转失败：{{err}}",
     "arrangeFailed": "排列失败：{{err}}",
-    "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）",
+    "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}。如果看不到窗口，请先将 iTerm 窗口拖到当前桌面。",
+    "arrangedWithSkipped": "已排列 {{count}} 个窗口为 {{cols}}×{{rows}}，跳过 {{skipped}} 个。其他桌面的窗口需手动拖到当前桌面。",
     "reopened": "正在新 iTerm 窗口中恢复会话…",
     "reopenFailed": "重新打开失败：{{err}}"
   },
