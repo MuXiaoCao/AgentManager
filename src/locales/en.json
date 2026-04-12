@@ -1,4 +1,16 @@
 {
+  "tabs": {
+    "dashboard": "Dashboard",
+    "claudeHistory": "Claude History"
+  },
+  "claudeHistory": {
+    "search": "Search sessions…",
+    "refresh": "Refresh",
+    "loading": "Scanning Claude sessions…",
+    "noMatch": "No sessions match the filter.",
+    "empty": "No Claude sessions found on disk.",
+    "clickToResume": "Click to resume this session in a new iTerm window"
+  },
   "app": {
     "title": "AgentManager",
     "arrangeButton": "▦ Arrange",

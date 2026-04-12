@@ -5,8 +5,11 @@ import { useTranslation, Trans } from 'react-i18next'
 import { SessionCard } from './components/SessionCard'
 import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { SetupBanner } from './components/SetupBanner'
+import { ClaudeHistoryList } from './components/ClaudeHistoryList'
 import { currentLanguage, toggleLanguage } from './i18n'
 import type { ArrangeReport, HookStatus, SessionEntry } from './types'
+
+type Tab = 'dashboard' | 'claude-history'
 
 const REQUIRED_EVENTS = ['SessionStart', 'Stop', 'SessionEnd']
 
@@ -21,6 +24,7 @@ export default function App() {
     items: MenuItem[]
   } | null>(null)
   const [lang, setLang] = useState(currentLanguage())
+  const [tab, setTab] = useState<Tab>('dashboard')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -252,6 +256,18 @@ export default function App() {
 
   const handleToggleLang = useCallback(() => toggleLanguage(), [])
 
+  const handleClaudeHistoryReopen = useCallback(
+    async (sessionId: string, cwd: string) => {
+      try {
+        await invoke('reopen_session', { sessionId, cwd })
+        showToast(t('toast.reopened'))
+      } catch (err) {
+        showToast(t('toast.reopenFailed', { err: String(err) }))
+      }
+    },
+    [showToast, t]
+  )
+
   // ─── render ───────────────────────────────────────────────────────
 
   const renderCard = (s: SessionEntry) => (
@@ -271,15 +287,30 @@ export default function App() {
   return (
     <div className="app">
       <header className="app__header">
-        <h1>{t('app.title')}</h1>
-        <div className="app__header-actions">
+        <div className="app__tabs">
           <button
-            className="toolbar-btn"
-            onClick={handleArrangeAll}
-            title={t('app.arrangeButtonTitle')}
+            className={`app__tab ${tab === 'dashboard' ? 'app__tab--active' : ''}`}
+            onClick={() => setTab('dashboard')}
           >
-            {t('app.arrangeButton')}
+            {t('tabs.dashboard')}
           </button>
+          <button
+            className={`app__tab ${tab === 'claude-history' ? 'app__tab--active' : ''}`}
+            onClick={() => setTab('claude-history')}
+          >
+            {t('tabs.claudeHistory')}
+          </button>
+        </div>
+        <div className="app__header-actions">
+          {tab === 'dashboard' && (
+            <button
+              className="toolbar-btn"
+              onClick={handleArrangeAll}
+              title={t('app.arrangeButtonTitle')}
+            >
+              {t('app.arrangeButton')}
+            </button>
+          )}
           <button
             className="toolbar-btn toolbar-btn--lang"
             onClick={handleToggleLang}
@@ -292,35 +323,46 @@ export default function App() {
         </div>
       </header>
 
-      {!hookInstalled && hookStatus && (
+      {tab === 'dashboard' && !hookInstalled && hookStatus && (
         <SetupBanner status={hookStatus} onInstall={handleInstallHook} />
       )}
 
-      <main className="app__main">
-        {sessions.length === 0 ? (
-          <div className="empty">
-            <p>{t('empty.title')}</p>
-            <p className="empty__hint">
-              <Trans i18nKey="empty.hint">
-                Start a <code>claude</code> session in iTerm and it will appear
-                here.
-              </Trans>
-            </p>
-          </div>
-        ) : (
-          <>
-            {activeSessions.length > 0 && (
-              <section>{activeSessions.map(renderCard)}</section>
-            )}
-            {historySessions.length > 0 && (
-              <section>
-                <h2 className="section-title">{t('history.title')}</h2>
-                {historySessions.map(renderCard)}
-              </section>
-            )}
-          </>
-        )}
-      </main>
+      {tab === 'dashboard' && (
+        <main className="app__main">
+          {sessions.length === 0 ? (
+            <div className="empty">
+              <p>{t('empty.title')}</p>
+              <p className="empty__hint">
+                <Trans i18nKey="empty.hint">
+                  Start a <code>claude</code> session in iTerm and it will
+                  appear here.
+                </Trans>
+              </p>
+            </div>
+          ) : (
+            <>
+              {activeSessions.length > 0 && (
+                <section>{activeSessions.map(renderCard)}</section>
+              )}
+              {historySessions.length > 0 && (
+                <section>
+                  <h2 className="section-title">{t('history.title')}</h2>
+                  {historySessions.map(renderCard)}
+                </section>
+              )}
+            </>
+          )}
+        </main>
+      )}
+
+      {tab === 'claude-history' && (
+        <main className="app__main">
+          <ClaudeHistoryList
+            onReopen={handleClaudeHistoryReopen}
+            showToast={showToast}
+          />
+        </main>
+      )}
 
       {menu && (
         <ContextMenu

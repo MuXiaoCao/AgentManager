@@ -1,5 +1,6 @@
 use tauri::{command, Manager, State};
 
+use crate::claude_history::{self, ClaudeHistoryEntry};
 use crate::hook_install::{self, HookInstallReport, HookStatus};
 use crate::iterm::{self, ArrangeReport, TileRegion};
 use crate::state::{AppState, SessionEntry};
@@ -21,16 +22,28 @@ pub fn delete_session(state: State<'_, AppState>, session_id: String) -> bool {
 }
 
 /// Open a new iTerm window and run `claude --resume <session_id>` inside
-/// the session's original cwd. Works for ended sessions from history.
+/// the given cwd. If `cwd` is not provided, looks it up from AgentManager's
+/// tracked state. This allows both Dashboard history cards and Claude history
+/// tab entries to use the same command.
 #[command]
 pub fn reopen_session(
     state: State<'_, AppState>,
     session_id: String,
+    cwd: Option<String>,
 ) -> Result<(), String> {
-    let Some(entry) = state.sessions.get(&session_id).map(|r| r.value().clone()) else {
-        return Err(format!("session {session_id} not found"));
-    };
-    iterm::reopen_session(&entry.cwd, &entry.session_id)
+    let effective_cwd = cwd
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            state
+                .sessions
+                .get(&session_id)
+                .map(|r| r.value().cwd.clone())
+        })
+        .unwrap_or_default();
+    if effective_cwd.is_empty() {
+        return Err(format!("no cwd available for session {session_id}"));
+    }
+    iterm::reopen_session(&effective_cwd, &session_id)
         .map_err(|e| e.to_string())
 }
 
@@ -106,6 +119,12 @@ fn compute_region(app: &tauri::AppHandle) -> anyhow::Result<TileRegion> {
         width: region_w.max(200),
         height: region_h.max(200),
     })
+}
+
+/// Scan Claude Code's local storage and return all known historical sessions.
+#[command]
+pub fn list_claude_sessions() -> Result<Vec<ClaudeHistoryEntry>, String> {
+    claude_history::list_claude_sessions().map_err(|e| e.to_string())
 }
 
 #[command]

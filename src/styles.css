@@ -51,6 +51,35 @@ body,
   user-select: none;
 }
 
+/* --- tabs --- */
+.app__tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.app__tab {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.app__tab:hover {
+  color: var(--text);
+  background: var(--bg-elev-2);
+}
+
+.app__tab--active {
+  color: var(--text);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+}
+
 .app__header h1 {
   font-size: 14px;
   margin: 0;
@@ -333,6 +362,101 @@ body,
 }
 
 /* --- toast --- */
+/* --- claude history list --- */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-list__toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.history-list__search {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+
+.history-list__search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(106, 164, 255, 0.2);
+}
+
+.history-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hcard {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.hcard:hover {
+  background: var(--bg-elev-2);
+  border-color: #333848;
+}
+
+.hcard__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.hcard__project {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hcard__time {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.hcard__summary {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.hcard__meta {
+  margin-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: 'SF Mono', ui-monospace, monospace;
+}
+
+.hcard__size {
+  color: var(--text-dim);
+}
+
 .toast {
   position: fixed;
   bottom: 16px;

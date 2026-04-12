@@ -29,3 +29,13 @@ export interface ArrangeReport {
   cols: number
   rows: number
 }
+
+export interface ClaudeHistoryEntry {
+  session_id: string
+  cwd: string
+  project: string
+  started_at: string | null
+  kind: string
+  summary: string
+  size_bytes: number
+}

@@ -1,4 +1,16 @@
 {
+  "tabs": {
+    "dashboard": "面板",
+    "claudeHistory": "Claude 历史"
+  },
+  "claudeHistory": {
+    "search": "搜索会话…",
+    "refresh": "刷新",
+    "loading": "正在扫描 Claude 会话…",
+    "noMatch": "没有匹配的会话。",
+    "empty": "未在本地找到 Claude 会话。",
+    "clickToResume": "点击在新 iTerm 窗口中恢复此会话"
+  },
   "app": {
     "title": "AgentManager",
     "arrangeButton": "▦ 排列",

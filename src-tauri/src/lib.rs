@@ -1,3 +1,4 @@
+mod claude_history;
 mod commands;
 mod hook_install;
 mod http_server;
@@ -27,6 +28,7 @@ pub fn run() {
             commands::reopen_session,
             commands::jump_to_iterm,
             commands::arrange_iterm_windows,
+            commands::list_claude_sessions,
             commands::check_hook_config,
             commands::install_claude_hook,
         ])
