@@ -52,6 +52,41 @@ impl AppState {
 
     pub fn upsert_from_notify(&self, payload: NotifyPayload) -> SessionEntry {
         let now = Utc::now();
+
+        // A fresh SessionStart in a given iTerm terminal replaces whatever
+        // was previously running there: one shell can only host one Claude
+        // process at a time, so any pre-existing card for the same
+        // iterm_session_id is stale (the old session either exited cleanly
+        // or was killed without firing SessionEnd). Drop those cards so
+        // worktree users don't pile up duplicates on the same pane.
+        //
+        // We only dedupe on SessionStart (not stop/notification/sessionend)
+        // to avoid accidentally removing legitimate sibling sessions on
+        // intermediate events.
+        if payload.event_type == "sessionstart"
+            && !payload.iterm_session_id.is_empty()
+            && payload.iterm_session_id != "unknown"
+        {
+            let iterm_id = &payload.iterm_session_id;
+            let new_session_id = &payload.session_id;
+            let stale: Vec<String> = self
+                .sessions
+                .iter()
+                .filter(|r| {
+                    let e = r.value();
+                    e.iterm_session_id == *iterm_id && e.session_id != *new_session_id
+                })
+                .map(|r| r.key().clone())
+                .collect();
+            if !stale.is_empty() {
+                for sid in &stale {
+                    self.sessions.remove(sid);
+                    self.aliases.remove(sid);
+                }
+                let _ = self.save_aliases();
+            }
+        }
+
         let entry = self
             .sessions
             .entry(payload.session_id.clone())
@@ -142,4 +177,65 @@ pub struct NotifyPayload {
     pub iterm_session_id: String,
     pub event_type: String,
     pub agent: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload(sid: &str, iterm: &str, event: &str, cwd: &str) -> NotifyPayload {
+        NotifyPayload {
+            session_id: sid.to_string(),
+            cwd: cwd.to_string(),
+            iterm_session_id: iterm.to_string(),
+            event_type: event.to_string(),
+            agent: "claude".to_string(),
+        }
+    }
+
+    #[test]
+    fn sessionstart_in_same_iterm_replaces_old_card() {
+        let state = AppState::new();
+        state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/worktree-a"));
+        // Same iterm_session_id, different session → A should be evicted.
+        state.upsert_from_notify(payload("B", "iterm1", "sessionstart", "/w/worktree-b"));
+
+        let sessions = state.list_sessions();
+        assert_eq!(sessions.len(), 1, "worktree switch should dedupe");
+        assert_eq!(sessions[0].session_id, "B");
+        assert_eq!(sessions[0].cwd, "/w/worktree-b");
+    }
+
+    #[test]
+    fn sessionstart_in_different_iterms_does_not_dedupe() {
+        let state = AppState::new();
+        state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/a"));
+        state.upsert_from_notify(payload("B", "iterm2", "sessionstart", "/w/b"));
+
+        let sessions = state.list_sessions();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn intermediate_stop_event_does_not_dedupe() {
+        let state = AppState::new();
+        state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/a"));
+        // A hypothetical sibling in the same pane with a non-start event
+        // should not cause A to be removed.
+        state.upsert_from_notify(payload("B", "iterm1", "stop", "/w/b"));
+
+        let sessions = state.list_sessions();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn unknown_iterm_id_does_not_dedupe() {
+        let state = AppState::new();
+        state.upsert_from_notify(payload("A", "unknown", "sessionstart", "/w/a"));
+        state.upsert_from_notify(payload("B", "unknown", "sessionstart", "/w/b"));
+
+        // Both should exist; "unknown" means we can't claim they share a pane.
+        let sessions = state.list_sessions();
+        assert_eq!(sessions.len(), 2);
+    }
 }
