@@ -15,12 +15,21 @@ interface Props {
 
 type Tone = 'active' | 'idle' | 'done'
 
-// `sessionstart` and `stop` both mean the session is alive — the first is
-// the initial state, the second fires between turns when Claude is waiting
-// for the next user prompt. `sessionend` is the only real terminator.
+// Five hook events map to three visual tones:
+//   active (green)  — Claude is doing something or session is alive
+//   idle   (yellow) — Claude needs user attention (Notification hook)
+//   done   (grey)   — session ended
+//
+// Text labels within each tone distinguish the actual state:
+//   sessionstart       → "Started"    (active)
+//   userpromptsubmit   → "Working"    (active — user just sent a prompt)
+//   stop               → "Idle"       (active — waiting for next prompt)
+//   notification       → "Needs input" (idle — Claude explicitly needs you)
+//   sessionend         → "Ended"      (done)
 function eventTone(event: string): Tone {
   switch (event) {
     case 'sessionstart':
+    case 'userpromptsubmit':
     case 'stop':
       return 'active'
     case 'notification':
@@ -36,6 +45,8 @@ function eventKey(event: string): string {
   switch (event) {
     case 'sessionstart':
       return 'card.status.started'
+    case 'userpromptsubmit':
+      return 'card.status.working'
     case 'stop':
       return 'card.status.idle'
     case 'notification':

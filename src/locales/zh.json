@@ -25,6 +25,7 @@
     "badge": "{{count}} 条通知",
     "status": {
       "started": "运行中",
+      "working": "处理中",
       "idle": "空闲",
       "needsInput": "等待输入",
       "ended": "已结束",

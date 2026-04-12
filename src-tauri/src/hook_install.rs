@@ -33,10 +33,17 @@ curl -s -X POST http://127.0.0.1:19280/api/notify \
 exit 0
 "#;
 
-/// The three events we care about. SessionStart is the one the original
-/// AgentPulse binary forgot, which caused live sessions to only appear after
-/// Claude exited.
-const EVENTS: &[&str] = &["SessionStart", "Stop", "SessionEnd"];
+/// The five events we track. SessionStart is the one the original AgentPulse
+/// binary forgot. UserPromptSubmit lets us show "Working" when Claude is
+/// processing. Notification fires when Claude needs user attention (permission
+/// prompts, questions, etc.).
+const EVENTS: &[&str] = &[
+    "SessionStart",
+    "UserPromptSubmit",
+    "Stop",
+    "Notification",
+    "SessionEnd",
+];
 
 pub fn hook_script_path() -> Result<PathBuf> {
     let mut p = dirs::home_dir().ok_or_else(|| anyhow!("no home dir"))?;

@@ -26,6 +26,7 @@
     "badge_other": "{{count}} notifications",
     "status": {
       "started": "Started",
+      "working": "Working",
       "idle": "Idle",
       "needsInput": "Needs input",
       "ended": "Ended",

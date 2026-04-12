@@ -11,7 +11,13 @@ import type { ArrangeReport, HookStatus, SessionEntry } from './types'
 
 type Tab = 'dashboard' | 'claude-history'
 
-const REQUIRED_EVENTS = ['SessionStart', 'Stop', 'SessionEnd']
+const REQUIRED_EVENTS = [
+  'SessionStart',
+  'UserPromptSubmit',
+  'Stop',
+  'Notification',
+  'SessionEnd',
+]
 
 export default function App() {
   const { t, i18n } = useTranslation()
