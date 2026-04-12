@@ -257,6 +257,14 @@ pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<Arr
         });
     }
 
+    // Phase 0: pull ALL iTerm windows to the current macOS Space BEFORE
+    // any osascript sends AppleEvents to iTerm. If we do this after,
+    // `tell application "iTerm"` can cause macOS to switch the active
+    // Space to wherever iTerm's windows live, and CGSGetActiveSpace in
+    // the helper would capture the wrong Space.
+    pull_iterm_to_current_space();
+    std::thread::sleep(std::time::Duration::from_millis(400));
+
     // Phase 1: which iTerm window contains each session?
     let sid_to_wid = resolve_window_ids(&live)?;
     let missing_count = live.len() - sid_to_wid.len();
@@ -298,13 +306,8 @@ pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<Arr
         assignments.push((wid, x1, y1, x2, y2));
     }
 
-    // Phase 4a: pull iTerm windows to the current macOS Space so they land
-    // on the same desktop the user is looking at.
-    pull_iterm_to_current_space();
-
-    // Phase 4b: apply bounds to each unique window.
-    // Short delay to let the Space transition settle.
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Phase 4: apply bounds. Windows were already pulled to the current
+    // Space at the top of this function (before any osascript touched iTerm).
     let (arranged, apply_skipped) = apply_bounds(&assignments)?;
 
     Ok(ArrangeReport {
