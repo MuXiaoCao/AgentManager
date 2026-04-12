@@ -79,6 +79,11 @@ pub struct TileRegion {
 
 /// Phase 1: ask iTerm which window contains each session id. Sessions that
 /// aren't found get an empty string and are filtered out.
+///
+/// All list/string operations happen **outside** the `tell application "iTerm"`
+/// block. Inside the tell block, any bare reference (e.g. `contents of x`)
+/// would be routed to iTerm, which doesn't know how to resolve generic
+/// AppleScript list references and throws -1728.
 fn resolve_window_ids(sids: &[&str]) -> Result<HashMap<String, i64>> {
     let list_items: Vec<String> = sids
         .iter()
@@ -87,11 +92,12 @@ fn resolve_window_ids(sids: &[&str]) -> Result<HashMap<String, i64>> {
     let script = format!(
         r#"
 set targetSids to {{{targets}}}
+set sidCount to count of targetSids
 set outText to ""
-tell application "iTerm"
-  repeat with sidRef in targetSids
-    set targetSid to contents of sidRef
-    set foundWid to ""
+repeat with i from 1 to sidCount
+  set targetSid to item i of targetSids
+  set foundWid to ""
+  tell application "iTerm"
     repeat with w in windows
       set wid to id of w
       repeat with t in tabs of w
@@ -105,9 +111,9 @@ tell application "iTerm"
       end repeat
       if foundWid is not "" then exit repeat
     end repeat
-    set outText to outText & targetSid & "=" & foundWid & linefeed
-  end repeat
-end tell
+  end tell
+  set outText to outText & targetSid & "=" & foundWid & linefeed
+end repeat
 return outText
 "#,
         targets = list_items.join(", ")
