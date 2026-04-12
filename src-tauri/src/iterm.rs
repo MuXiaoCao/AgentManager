@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use std::collections::HashMap;
 use std::process::Command;
 
 /// Run an AppleScript snippet with osascript, returning stdout.
@@ -30,17 +31,15 @@ fn is_blank(id: &str) -> bool {
 }
 
 /// Activate iTerm and focus the tab/session whose session id matches.
-/// `iTerm2` AppleScript exposes session ids that match $ITERM_SESSION_ID.
+///
+/// iTerm's `current tab` / `current session` properties are read-only, so we
+/// can't use assignment. `tell session to select` is the idiomatic command
+/// and handles propagating the selection up through its tab and window.
 pub fn jump_to(iterm_session_id: &str) -> Result<()> {
     if is_blank(iterm_session_id) {
         return Err(anyhow!("no iTerm session id recorded"));
     }
     let sid = normalize(iterm_session_id).replace('"', "\\\"");
-    // We iterate windows→tabs→sessions and, when we find the target, pin
-    // the split pane via `set current session` (inside the tab) and the
-    // tab via `set current tab` (inside the window). Explicit property
-    // assignment is more reliable than `tell X to select Y` across iTerm2
-    // versions. `activate` at the end brings iTerm to the front.
     let script = format!(
         r#"
 tell application "iTerm"
@@ -48,9 +47,7 @@ tell application "iTerm"
     repeat with t in tabs of w
       repeat with s in sessions of t
         if unique id of s is "{sid}" then
-          tell t to select s
-          tell w to set current tab to t
-          select w
+          tell s to select
           activate
           return "ok"
         end if
@@ -80,100 +77,156 @@ pub struct TileRegion {
     pub height: i32,
 }
 
-/// Re-arrange the iTerm windows belonging to `session_ids` into a grid.
-/// The grid is laid out as `cols × rows` where `cols = ceil(sqrt(n))`.
-/// Sessions whose iTerm window can't be found are skipped silently.
+/// Phase 1: ask iTerm which window contains each session id. Sessions that
+/// aren't found get an empty string and are filtered out.
+fn resolve_window_ids(sids: &[&str]) -> Result<HashMap<String, i64>> {
+    let list_items: Vec<String> = sids
+        .iter()
+        .map(|s| format!("\"{}\"", s.replace('"', "\\\"")))
+        .collect();
+    let script = format!(
+        r#"
+set targetSids to {{{targets}}}
+set outText to ""
+tell application "iTerm"
+  repeat with sidRef in targetSids
+    set targetSid to contents of sidRef
+    set foundWid to ""
+    repeat with w in windows
+      set wid to id of w
+      repeat with t in tabs of w
+        repeat with s in sessions of t
+          if unique id of s is targetSid then
+            set foundWid to wid as string
+            exit repeat
+          end if
+        end repeat
+        if foundWid is not "" then exit repeat
+      end repeat
+      if foundWid is not "" then exit repeat
+    end repeat
+    set outText to outText & targetSid & "=" & foundWid & linefeed
+  end repeat
+end tell
+return outText
+"#,
+        targets = list_items.join(", ")
+    );
+    let out = run_osascript(&script)?;
+    let mut map = HashMap::new();
+    for line in out.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((sid, wid_str)) = line.split_once('=') {
+            if wid_str.is_empty() {
+                continue;
+            }
+            if let Ok(wid) = wid_str.trim().parse::<i64>() {
+                map.insert(sid.to_string(), wid);
+            }
+        }
+    }
+    Ok(map)
+}
+
+/// Phase 3: apply `set bounds` to a flat list of `(window_id, bounds)` tuples.
+fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usize)> {
+    if assignments.is_empty() {
+        return Ok((0, 0));
+    }
+    let mut script = String::from("set arranged to 0\nset skipped to 0\n");
+    script.push_str("tell application \"iTerm\"\n");
+    for &(wid, x1, y1, x2, y2) in assignments {
+        script.push_str(&format!(
+            "  try\n    set bounds of (first window whose id is {wid}) to {{{x1}, {y1}, {x2}, {y2}}}\n    set arranged to arranged + 1\n  on error\n    set skipped to skipped + 1\n  end try\n"
+        ));
+    }
+    script.push_str("end tell\n");
+    script.push_str("return (arranged as string) & \",\" & (skipped as string)\n");
+
+    let out = run_osascript(&script)?;
+    Ok(parse_pair(out.trim()))
+}
+
+/// Re-arrange the iTerm windows that contain the given session ids into a
+/// grid. Sessions are deduplicated by their containing window, so a window
+/// hosting several tabbed sessions only occupies one cell. The grid is
+/// `cols × rows` where `cols = ceil(sqrt(n))` and `rows = ceil(n / cols)`
+/// and `n` is the number of *unique windows*, not sessions.
 pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<ArrangeReport> {
-    // Filter out empty/placeholder ids and strip the wNtNpN: prefix.
-    let live_ids: Vec<&str> = session_ids
+    // Filter blanks and normalize the prefix.
+    let live: Vec<&str> = session_ids
         .iter()
         .filter(|s| !is_blank(s))
         .map(|s| normalize(s.as_str()))
         .collect();
-    if live_ids.is_empty() {
+
+    let blank_count = session_ids.len() - live.len();
+
+    if live.is_empty() {
         return Ok(ArrangeReport {
             arranged: 0,
-            skipped: session_ids.len(),
+            skipped: blank_count,
             cols: 0,
             rows: 0,
         });
     }
 
-    let n = live_ids.len() as i32;
+    // Phase 1: which iTerm window contains each session?
+    let sid_to_wid = resolve_window_ids(&live)?;
+    let missing_count = live.len() - sid_to_wid.len();
+
+    // Phase 2: dedupe windows, preserving first-seen order from the input list.
+    let mut unique_wids: Vec<i64> = Vec::new();
+    for sid in &live {
+        if let Some(&wid) = sid_to_wid.get(*sid) {
+            if !unique_wids.contains(&wid) {
+                unique_wids.push(wid);
+            }
+        }
+    }
+
+    let n = unique_wids.len() as i32;
+    if n == 0 {
+        return Ok(ArrangeReport {
+            arranged: 0,
+            skipped: blank_count + missing_count,
+            cols: 0,
+            rows: 0,
+        });
+    }
+
+    // Phase 3: compute grid dimensions for the unique windows.
     let cols = ((n as f64).sqrt().ceil()) as i32;
     let rows = ((n as f64 / cols as f64).ceil()) as i32;
-    let cell_w = region.width / cols;
-    let cell_h = region.height / rows;
+    let cell_w = (region.width / cols).max(1);
+    let cell_h = (region.height / rows).max(1);
 
-    // Build AppleScript: one pass that knows about every session id and the
-    // bounds to assign. We encode the (id, bounds) list as a parallel list
-    // of AppleScript records.
-    let mut script = String::new();
-    script.push_str("set assignments to {");
-    for (idx, sid) in live_ids.iter().enumerate() {
-        let col = (idx as i32) % cols;
-        let row = (idx as i32) / cols;
+    let mut assignments: Vec<(i64, i32, i32, i32, i32)> = Vec::with_capacity(n as usize);
+    for (i, &wid) in unique_wids.iter().enumerate() {
+        let col = (i as i32) % cols;
+        let row = (i as i32) / cols;
         let x1 = region.x + col * cell_w;
         let y1 = region.y + row * cell_h;
         let x2 = x1 + cell_w;
         let y2 = y1 + cell_h;
-        if idx > 0 {
-            script.push_str(", ");
-        }
-        let safe_sid = sid.replace('"', "\\\"");
-        script.push_str(&format!(
-            r#"{{sid:"{}", b:{{{}, {}, {}, {}}}}}"#,
-            safe_sid, x1, y1, x2, y2
-        ));
+        assignments.push((wid, x1, y1, x2, y2));
     }
-    script.push_str("}\n");
-    script.push_str(
-        r#"
-set arranged to 0
-set skipped to 0
-tell application "iTerm"
-  activate
-  repeat with a in assignments
-    set targetSid to sid of a
-    set targetBounds to b of a
-    set found to false
-    repeat with w in windows
-      repeat with t in tabs of w
-        repeat with s in sessions of t
-          if unique id of s is targetSid then
-            try
-              set bounds of w to targetBounds
-              set arranged to arranged + 1
-              set found to true
-            on error
-              set skipped to skipped + 1
-            end try
-            exit repeat
-          end if
-        end repeat
-        if found then exit repeat
-      end repeat
-      if found then exit repeat
-    end repeat
-    if not found then set skipped to skipped + 1
-  end repeat
-end tell
-return (arranged as string) & "," & (skipped as string)
-"#,
-    );
 
-    let out = run_osascript(&script)?;
-    let (arranged, skipped) = parse_arranged_reply(out.trim());
+    // Phase 4: apply bounds to each unique window.
+    let (arranged, apply_skipped) = apply_bounds(&assignments)?;
+
     Ok(ArrangeReport {
         arranged,
-        skipped: (skipped as usize)
-            + (session_ids.len() - live_ids.len()),
+        skipped: blank_count + missing_count + apply_skipped,
         cols: cols as usize,
         rows: rows as usize,
     })
 }
 
-fn parse_arranged_reply(s: &str) -> (usize, usize) {
+fn parse_pair(s: &str) -> (usize, usize) {
     let mut it = s.split(',');
     let a = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0);
     let b = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0);
@@ -219,5 +272,12 @@ mod tests {
         assert!(is_blank(""));
         assert!(is_blank("unknown"));
         assert!(!is_blank("w0t0p0:abc"));
+    }
+
+    #[test]
+    fn parse_pair_handles_expected_format() {
+        assert_eq!(parse_pair("3,0"), (3, 0));
+        assert_eq!(parse_pair("0,2"), (0, 2));
+        assert_eq!(parse_pair(""), (0, 0));
     }
 }
