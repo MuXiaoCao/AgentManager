@@ -31,7 +31,12 @@
     "jump": "跳转到 iTerm",
     "arrangeAll": "整理所有 iTerm 窗口",
     "dismiss": "移除",
+    "reopen": "在 iTerm 中重新打开",
+    "deleteHistory": "从历史中删除",
     "renamePrompt": "重命名会话"
+  },
+  "history": {
+    "title": "历史会话"
   },
   "banner": {
     "notInstalled": "Claude hook 未完全安装。",
@@ -45,7 +50,9 @@
     "jumpFailed": "跳转失败：{{err}}",
     "arrangeFailed": "排列失败：{{err}}",
     "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）"
+    "arrangedWithSkipped": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}（跳过 {{skipped}} 个）",
+    "reopened": "正在新 iTerm 窗口中恢复会话…",
+    "reopenFailed": "重新打开失败：{{err}}"
   },
   "language": {
     "toggleToZh": "切换到中文",

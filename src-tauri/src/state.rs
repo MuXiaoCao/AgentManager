@@ -24,11 +24,16 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Maximum number of sessions persisted to disk. Older entries are pruned
+    /// on every save so the history file stays bounded.
+    const MAX_HISTORY: usize = 200;
+
     pub fn new() -> Self {
         let this = Self {
             sessions: Arc::new(DashMap::new()),
             aliases: Arc::new(DashMap::new()),
         };
+        this.load_sessions();
         this.load_aliases();
         this
     }
@@ -110,11 +115,27 @@ impl AppState {
                 alias: None,
             })
             .clone();
+        let _ = self.save_sessions();
         entry
     }
 
     pub fn dismiss(&self, session_id: &str) -> bool {
-        self.sessions.remove(session_id).is_some()
+        let removed = self.sessions.remove(session_id).is_some();
+        if removed {
+            let _ = self.save_sessions();
+        }
+        removed
+    }
+
+    /// Permanently delete a session from history (persisted).
+    pub fn delete_session(&self, session_id: &str) -> bool {
+        let removed = self.sessions.remove(session_id).is_some();
+        self.aliases.remove(session_id);
+        if removed {
+            let _ = self.save_sessions();
+            let _ = self.save_aliases();
+        }
+        removed
     }
 
     pub fn set_alias(&self, session_id: &str, alias: Option<String>) {
@@ -164,6 +185,45 @@ impl AppState {
             .map(|r| (r.key().clone(), serde_json::Value::String(r.value().clone())))
             .collect();
         std::fs::write(&path, serde_json::to_string_pretty(&map)?)?;
+        Ok(())
+    }
+
+    // ── session persistence ────────────────────────────────────────────
+
+    fn sessions_path() -> Option<std::path::PathBuf> {
+        let mut p = dirs::config_dir()?;
+        p.push("agent-manager");
+        p.push("sessions.json");
+        Some(p)
+    }
+
+    fn load_sessions(&self) {
+        let Some(path) = Self::sessions_path() else { return };
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let Ok(entries) = serde_json::from_str::<Vec<SessionEntry>>(&text) else {
+            return;
+        };
+        for entry in entries {
+            self.sessions.insert(entry.session_id.clone(), entry);
+        }
+    }
+
+    fn save_sessions(&self) -> anyhow::Result<()> {
+        let Some(path) = Self::sessions_path() else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        // Collect and sort newest-first, then truncate to MAX_HISTORY.
+        let mut entries: Vec<SessionEntry> = self
+            .sessions
+            .iter()
+            .map(|r| r.value().clone())
+            .collect();
+        entries.sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
+        entries.truncate(Self::MAX_HISTORY);
+        std::fs::write(&path, serde_json::to_string_pretty(&entries)?)?;
         Ok(())
     }
 }

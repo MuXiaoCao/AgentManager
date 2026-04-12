@@ -14,6 +14,26 @@ pub fn dismiss_session(state: State<'_, AppState>, session_id: String) -> bool {
     state.dismiss(&session_id)
 }
 
+/// Permanently remove a session from history (disk + memory).
+#[command]
+pub fn delete_session(state: State<'_, AppState>, session_id: String) -> bool {
+    state.delete_session(&session_id)
+}
+
+/// Open a new iTerm window and run `claude --resume <session_id>` inside
+/// the session's original cwd. Works for ended sessions from history.
+#[command]
+pub fn reopen_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let Some(entry) = state.sessions.get(&session_id).map(|r| r.value().clone()) else {
+        return Err(format!("session {session_id} not found"));
+    };
+    iterm::reopen_session(&entry.cwd, &entry.session_id)
+        .map_err(|e| e.to_string())
+}
+
 /// Persist a display alias for `session_id`. This is purely cosmetic —
 /// it only affects the card title inside AgentManager, not the iTerm tab.
 #[command]

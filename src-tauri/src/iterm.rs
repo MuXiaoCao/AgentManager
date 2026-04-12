@@ -87,6 +87,28 @@ end tell
     Ok(())
 }
 
+/// Open a new iTerm window, cd into `cwd`, and run `claude --resume <id>`
+/// to pick up where the ended session left off.
+pub fn reopen_session(cwd: &str, claude_session_id: &str) -> Result<()> {
+    let safe_cwd = cwd.replace('\'', "'\\''");
+    let safe_id = claude_session_id.replace('\'', "'\\''");
+    let script = format!(
+        r#"
+tell application "iTerm"
+  create window with default profile
+  tell current session of current tab of current window
+    write text "cd '{cwd}' && claude --resume '{sid}'"
+  end tell
+end tell
+"#,
+        cwd = safe_cwd,
+        sid = safe_id,
+    );
+    run_osascript(&script)?;
+    let _ = Command::new("open").args(["-a", "iTerm"]).status();
+    Ok(())
+}
+
 /// Screen rect reserved for the tiled iTerm windows (main window's area is excluded).
 #[derive(Debug, Clone, Copy)]
 pub struct TileRegion {

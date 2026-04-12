@@ -95,6 +95,15 @@ body,
   gap: 8px;
 }
 
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin: 16px 0 6px 2px;
+  font-weight: 600;
+}
+
 .empty {
   text-align: center;
   color: var(--text-dim);

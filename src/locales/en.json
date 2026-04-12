@@ -32,7 +32,12 @@
     "jump": "Jump to iTerm",
     "arrangeAll": "Arrange all iTerm windows",
     "dismiss": "Dismiss",
+    "reopen": "Reopen in iTerm",
+    "deleteHistory": "Delete from history",
     "renamePrompt": "Rename session"
+  },
+  "history": {
+    "title": "History"
   },
   "banner": {
     "notInstalled": "Claude hook not fully installed.",
@@ -46,7 +51,9 @@
     "jumpFailed": "Jump failed: {{err}}",
     "arrangeFailed": "Arrange failed: {{err}}",
     "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}",
-    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)"
+    "arrangedWithSkipped": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}} ({{skipped}} skipped)",
+    "reopened": "Reopening session in a new iTerm window…",
+    "reopenFailed": "Reopen failed: {{err}}"
   },
   "language": {
     "toggleToZh": "切换到中文",

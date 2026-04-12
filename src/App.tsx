@@ -27,16 +27,13 @@ export default function App() {
 
   const showToast = useCallback((text: string) => {
     setToast(text)
-    if (toastTimer.current) {
-      window.clearTimeout(toastTimer.current)
-    }
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => setToast(null), 2500)
   }, [])
 
   const refreshSessions = useCallback(async () => {
     try {
-      const list = await invoke<SessionEntry[]>('get_sessions')
-      setSessions(list)
+      setSessions(await invoke<SessionEntry[]>('get_sessions'))
     } catch (err) {
       console.error('get_sessions failed', err)
     }
@@ -44,8 +41,7 @@ export default function App() {
 
   const refreshHookStatus = useCallback(async () => {
     try {
-      const status = await invoke<HookStatus>('check_hook_config')
-      setHookStatus(status)
+      setHookStatus(await invoke<HookStatus>('check_hook_config'))
     } catch (err) {
       console.error('check_hook_config failed', err)
     }
@@ -55,24 +51,17 @@ export default function App() {
     refreshSessions()
     refreshHookStatus()
     let unlisten: UnlistenFn | undefined
-    listen<SessionEntry>('session-updated', () => {
-      refreshSessions()
-    })
-      .then((fn) => {
-        unlisten = fn
-      })
+    listen<SessionEntry>('session-updated', () => refreshSessions())
+      .then((fn) => { unlisten = fn })
       .catch(console.error)
-    return () => {
-      unlisten?.()
-    }
+    return () => { unlisten?.() }
   }, [refreshSessions, refreshHookStatus])
 
   useEffect(() => {
-    const onChange = (next: string) => setLang(next.startsWith('zh') ? 'zh' : 'en')
+    const onChange = (next: string) =>
+      setLang(next.startsWith('zh') ? 'zh' : 'en')
     i18n.on('languageChanged', onChange)
-    return () => {
-      i18n.off('languageChanged', onChange)
-    }
+    return () => { i18n.off('languageChanged', onChange) }
   }, [i18n])
 
   const hookInstalled = useMemo(() => {
@@ -82,6 +71,18 @@ export default function App() {
       REQUIRED_EVENTS.every((e) => hookStatus.installed_events.includes(e))
     )
   }, [hookStatus])
+
+  // Split into active vs ended (history).
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => s.last_event !== 'sessionend'),
+    [sessions]
+  )
+  const historySessions = useMemo(
+    () => sessions.filter((s) => s.last_event === 'sessionend'),
+    [sessions]
+  )
+
+  // ─── actions ──────────────────────────────────────────────────────
 
   const handleInstallHook = useCallback(async () => {
     try {
@@ -106,17 +107,7 @@ export default function App() {
     [refreshSessions, showToast]
   )
 
-  const handleCancelRename = useCallback(() => {
-    setRenamingId(null)
-  }, [])
-
-  const handleDismiss = useCallback(
-    async (sessionId: string) => {
-      await invoke('dismiss_session', { sessionId })
-      refreshSessions()
-    },
-    [refreshSessions]
-  )
+  const handleCancelRename = useCallback(() => setRenamingId(null), [])
 
   const handleJump = useCallback(
     async (sessionId: string) => {
@@ -130,10 +121,40 @@ export default function App() {
     [showToast, t]
   )
 
+  const handleReopen = useCallback(
+    async (sessionId: string) => {
+      setSelectedId(sessionId)
+      try {
+        await invoke('reopen_session', { sessionId })
+        showToast(t('toast.reopened'))
+      } catch (err) {
+        showToast(t('toast.reopenFailed', { err: String(err) }))
+      }
+    },
+    [showToast, t]
+  )
+
+  const handleDismiss = useCallback(
+    async (sessionId: string) => {
+      await invoke('dismiss_session', { sessionId })
+      refreshSessions()
+    },
+    [refreshSessions]
+  )
+
+  const handleDelete = useCallback(
+    async (sessionId: string) => {
+      await invoke('delete_session', { sessionId })
+      refreshSessions()
+    },
+    [refreshSessions]
+  )
+
   const handleArrangeAll = useCallback(async () => {
     try {
       const report = await invoke<ArrangeReport>('arrange_iterm_windows')
-      const key = report.skipped > 0 ? 'toast.arrangedWithSkipped' : 'toast.arranged'
+      const key =
+        report.skipped > 0 ? 'toast.arrangedWithSkipped' : 'toast.arranged'
       showToast(
         t(key, {
           count: report.arranged,
@@ -147,7 +168,9 @@ export default function App() {
     }
   }, [showToast, t])
 
-  const buildMenu = useCallback(
+  // ─── context menus ────────────────────────────────────────────────
+
+  const buildActiveMenu = useCallback(
     (entry: SessionEntry): MenuItem[] => [
       {
         id: 'rename',
@@ -178,20 +201,72 @@ export default function App() {
     [handleJump, handleArrangeAll, handleDismiss, t]
   )
 
+  const buildHistoryMenu = useCallback(
+    (entry: SessionEntry): MenuItem[] => [
+      {
+        id: 'reopen',
+        label: t('menu.reopen'),
+        onSelect: () => handleReopen(entry.session_id),
+      },
+      {
+        id: 'rename',
+        label: t('menu.rename'),
+        onSelect: () => setRenamingId(entry.session_id),
+      },
+      { id: 'sep', label: '', separator: true, onSelect: () => {} },
+      {
+        id: 'delete',
+        label: t('menu.deleteHistory'),
+        onSelect: () => handleDelete(entry.session_id),
+        danger: true,
+      },
+    ],
+    [handleReopen, handleDelete, t]
+  )
+
   const openMenu = useCallback(
     (entry: SessionEntry, ev: React.MouseEvent) => {
       ev.preventDefault()
       setSelectedId(entry.session_id)
-      setMenu({ x: ev.clientX, y: ev.clientY, items: buildMenu(entry) })
+      const isEnded = entry.last_event === 'sessionend'
+      const items = isEnded
+        ? buildHistoryMenu(entry)
+        : buildActiveMenu(entry)
+      setMenu({ x: ev.clientX, y: ev.clientY, items })
     },
-    [buildMenu]
+    [buildActiveMenu, buildHistoryMenu]
   )
 
   const closeMenu = useCallback(() => setMenu(null), [])
 
-  const handleToggleLang = useCallback(() => {
-    toggleLanguage()
-  }, [])
+  const handleCardClick = useCallback(
+    (entry: SessionEntry) => {
+      if (entry.last_event === 'sessionend') {
+        handleReopen(entry.session_id)
+      } else {
+        handleJump(entry.session_id)
+      }
+    },
+    [handleJump, handleReopen]
+  )
+
+  const handleToggleLang = useCallback(() => toggleLanguage(), [])
+
+  // ─── render ───────────────────────────────────────────────────────
+
+  const renderCard = (s: SessionEntry) => (
+    <SessionCard
+      key={s.session_id}
+      entry={s}
+      isRenaming={renamingId === s.session_id}
+      isSelected={selectedId === s.session_id}
+      onClick={() => handleCardClick(s)}
+      onContextMenu={(ev) => openMenu(s, ev)}
+      onDoubleClick={() => handleCardClick(s)}
+      onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
+      onCancelRename={handleCancelRename}
+    />
+  )
 
   return (
     <div className="app">
@@ -208,8 +283,9 @@ export default function App() {
           <button
             className="toolbar-btn toolbar-btn--lang"
             onClick={handleToggleLang}
-            title={t(lang === 'zh' ? 'language.toggleToEn' : 'language.toggleToZh')}
-            aria-label={t(lang === 'zh' ? 'language.toggleToEn' : 'language.toggleToZh')}
+            title={t(
+              lang === 'zh' ? 'language.toggleToEn' : 'language.toggleToZh'
+            )}
           >
             🌐 {lang === 'zh' ? 'EN' : '中'}
           </button>
@@ -226,24 +302,23 @@ export default function App() {
             <p>{t('empty.title')}</p>
             <p className="empty__hint">
               <Trans i18nKey="empty.hint">
-                Start a <code>claude</code> session in iTerm and it will appear here.
+                Start a <code>claude</code> session in iTerm and it will appear
+                here.
               </Trans>
             </p>
           </div>
         ) : (
-          sessions.map((s) => (
-            <SessionCard
-              key={s.session_id}
-              entry={s}
-              isRenaming={renamingId === s.session_id}
-              isSelected={selectedId === s.session_id}
-              onClick={() => handleJump(s.session_id)}
-              onContextMenu={(ev) => openMenu(s, ev)}
-              onDoubleClick={() => handleJump(s.session_id)}
-              onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
-              onCancelRename={handleCancelRename}
-            />
-          ))
+          <>
+            {activeSessions.length > 0 && (
+              <section>{activeSessions.map(renderCard)}</section>
+            )}
+            {historySessions.length > 0 && (
+              <section>
+                <h2 className="section-title">{t('history.title')}</h2>
+                {historySessions.map(renderCard)}
+              </section>
+            )}
+          </>
         )}
       </main>
 
@@ -255,7 +330,6 @@ export default function App() {
           onClose={closeMenu}
         />
       )}
-
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
