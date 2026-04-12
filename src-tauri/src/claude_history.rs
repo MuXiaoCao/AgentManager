@@ -17,6 +17,8 @@ pub struct ClaudeHistoryEntry {
     pub summary: String,
     /// Conversation file size in bytes (0 if not found).
     pub size_bytes: u64,
+    /// User-assigned alias from AgentManager (persisted in aliases.json).
+    pub alias: Option<String>,
 }
 
 /// Metadata from `~/.claude/sessions/<pid>.json`.
@@ -144,6 +146,7 @@ pub fn list_claude_sessions() -> Result<Vec<ClaudeHistoryEntry>> {
                     },
                     summary: String::new(),
                     size_bytes: 0,
+                    alias: None,
                 },
             );
         }
@@ -195,6 +198,7 @@ pub fn list_claude_sessions() -> Result<Vec<ClaudeHistoryEntry>> {
                             kind: "interactive".into(),
                             summary: String::new(),
                             size_bytes: 0,
+                            alias: None,
                         }
                     });
                     entry.project = project.clone();

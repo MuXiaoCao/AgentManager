@@ -444,6 +444,34 @@ body,
   line-height: 1.4;
 }
 
+.hcard__rename-input {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+}
+
+.hcard__rename-input:focus {
+  box-shadow: 0 0 0 2px rgba(106, 164, 255, 0.25);
+}
+
+.hcard__cwd {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: 'SF Mono', ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
 .hcard__meta {
   margin-top: 4px;
   display: flex;

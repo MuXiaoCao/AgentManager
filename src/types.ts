@@ -38,4 +38,5 @@ export interface ClaudeHistoryEntry {
   kind: string
   summary: string
   size_bytes: number
+  alias: string | null
 }

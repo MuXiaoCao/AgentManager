@@ -130,10 +130,17 @@ fn compute_region(app: &tauri::AppHandle) -> anyhow::Result<TileRegion> {
     })
 }
 
-/// Scan Claude Code's local storage and return all known historical sessions.
+/// Scan Claude Code's local storage and return all known historical sessions,
+/// with user aliases merged in.
 #[command]
-pub fn list_claude_sessions() -> Result<Vec<ClaudeHistoryEntry>, String> {
-    claude_history::list_claude_sessions().map_err(|e| e.to_string())
+pub fn list_claude_sessions(state: State<'_, AppState>) -> Result<Vec<ClaudeHistoryEntry>, String> {
+    let mut entries = claude_history::list_claude_sessions().map_err(|e| e.to_string())?;
+    for entry in &mut entries {
+        if let Some(alias) = state.aliases.get(&entry.session_id) {
+            entry.alias = Some(alias.value().clone());
+        }
+    }
+    Ok(entries)
 }
 
 #[command]
