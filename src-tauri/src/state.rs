@@ -102,6 +102,10 @@ impl AppState {
                 e.last_updated = now;
                 if payload.event_type == "notification" {
                     e.notification_count = e.notification_count.saturating_add(1);
+                } else {
+                    // Any non-notification event (stop, userpromptsubmit, etc.)
+                    // means the user has moved past the pending notifications.
+                    e.notification_count = 0;
                 }
             })
             .or_insert_with(|| SessionEntry {

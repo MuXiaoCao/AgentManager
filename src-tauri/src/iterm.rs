@@ -178,7 +178,13 @@ return outText
     Ok(map)
 }
 
-/// Phase 3: apply `set bounds` to a flat list of `(window_id, bounds)` tuples.
+/// Phase 3: move each window to the **current** macOS Space and set its bounds.
+///
+/// `set bounds` alone only repositions within the window's current Space. If
+/// the user moved AgentManager to Space 2 but iTerm windows live on Space 1,
+/// they'd be arranged on the wrong desktop. The fix: miniaturize → delay →
+/// deminiaturize each window first. macOS always restores a deminiaturized
+/// window on the user's **current** Space, regardless of where it was before.
 fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usize)> {
     if assignments.is_empty() {
         return Ok((0, 0));
@@ -187,7 +193,19 @@ fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usi
     script.push_str("tell application \"iTerm\"\n");
     for &(wid, x1, y1, x2, y2) in assignments {
         script.push_str(&format!(
-            "  try\n    set bounds of (first window whose id is {wid}) to {{{x1}, {y1}, {x2}, {y2}}}\n    set arranged to arranged + 1\n  on error\n    set skipped to skipped + 1\n  end try\n"
+            r#"  try
+    set targetW to (first window whose id is {wid})
+    -- Pull the window to the current Space via miniaturize round-trip
+    set miniaturized of targetW to true
+    delay 0.15
+    set miniaturized of targetW to false
+    delay 0.25
+    set bounds of targetW to {{{x1}, {y1}, {x2}, {y2}}}
+    set arranged to arranged + 1
+  on error
+    set skipped to skipped + 1
+  end try
+"#
         ));
     }
     script.push_str("end tell\n");
