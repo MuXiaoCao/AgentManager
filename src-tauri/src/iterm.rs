@@ -150,11 +150,23 @@ fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usi
     }
     let mut script = String::from("set arranged to 0\nset skipped to 0\n");
     script.push_str("tell application \"iTerm\"\n");
+
+    // Phase A: set bounds for each window.
     for &(wid, x1, y1, x2, y2) in assignments {
         script.push_str(&format!(
             "  try\n    set bounds of (first window whose id is {wid}) to {{{x1}, {y1}, {x2}, {y2}}}\n    set arranged to arranged + 1\n  on error\n    set skipped to skipped + 1\n  end try\n"
         ));
     }
+
+    // Phase B: raise ALL arranged windows so they're all visible in front
+    // of other apps. Iterate last-to-first so window 1 ends up on top.
+    for &(wid, _, _, _, _) in assignments.iter().rev() {
+        script.push_str(&format!(
+            "  try\n    select (first window whose id is {wid})\n  end try\n"
+        ));
+    }
+    script.push_str("  activate\n");
+
     script.push_str("end tell\n");
     script.push_str("return (arranged as string) & \",\" & (skipped as string)\n");
     let out = run_osascript(&script)?;
@@ -216,10 +228,6 @@ pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<Arr
     }
 
     let (arranged, apply_skipped) = apply_bounds(&assignments)?;
-
-    // Bring iTerm to the foreground so the user immediately sees the
-    // arranged windows.
-    let _ = Command::new("open").args(["-a", "iTerm"]).status();
 
     Ok(ArrangeReport {
         arranged,
