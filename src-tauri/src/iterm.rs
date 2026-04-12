@@ -30,19 +30,24 @@ fn is_blank(id: &str) -> bool {
     id.is_empty() || id == "unknown"
 }
 
-/// Activate iTerm and focus the tab/session whose session id matches.
+/// Focus the iTerm window/tab/session whose session id matches and bring
+/// iTerm to the foreground.
 ///
-/// Done in two steps:
+/// Three layers need to be touched because `tell s to select` does NOT
+/// propagate upward — I verified empirically that selecting a session
+/// only changes the split pane within its tab; iTerm's `current window`
+/// is still whatever it was before, and once the app is activated the
+/// user ends up looking at the wrong window.
 ///
-/// 1. `tell s to select` inside iTerm — switches the target session to be
-///    the current split pane, which propagates up to its tab and window.
-///    iTerm's `current tab` / `current session` are read-only so we can't
-///    use property assignment.
-/// 2. `open -a iTerm` as a separate subprocess — forces iTerm to the
-///    foreground. This is more reliable than AppleScript's `activate`
-///    because `open` is LaunchServices-backed and isn't subject to
-///    focus-stealing prevention when another app (e.g. AgentManager
-///    itself) is currently frontmost.
+/// The correct sequence is:
+///
+/// 1. `select w` — make w iTerm's current key window.
+/// 2. `tell t to select` — make t w's current tab.
+/// 3. `tell s to select` — make s t's current split pane.
+/// 4. `open -a iTerm` as a separate subprocess — bring iTerm to the
+///    foreground. `open` is LaunchServices-backed and isn't subject to
+///    macOS's focus-stealing prevention the way AppleScript `activate`
+///    is when AgentManager itself is currently frontmost.
 pub fn jump_to(iterm_session_id: &str) -> Result<()> {
     if is_blank(iterm_session_id) {
         return Err(anyhow!("no iTerm session id recorded"));
@@ -55,6 +60,8 @@ tell application "iTerm"
     repeat with t in tabs of w
       repeat with s in sessions of t
         if unique id of s is "{sid}" then
+          select w
+          tell t to select
           tell s to select
           return "ok"
         end if
@@ -73,10 +80,8 @@ end tell
         ));
     }
 
-    // Force iTerm into the foreground. `open -a` bypasses macOS's
-    // focus-stealing prevention. We ignore the exit code: even if iTerm
-    // can't be raised (e.g. it was quit between select and open), the
-    // session select inside iTerm already succeeded.
+    // Force iTerm into the foreground. See the doc comment for why this
+    // is a separate subprocess instead of AppleScript's `activate`.
     let _ = Command::new("open").args(["-a", "iTerm"]).status();
 
     Ok(())
