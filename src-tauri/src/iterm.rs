@@ -178,22 +178,26 @@ return outText
     Ok(map)
 }
 
-/// Move iTerm windows to the user's current macOS Space using the bundled
-/// `move-to-space` helper (compiled from scripts/move-to-space.swift). The
-/// helper uses private CoreGraphics APIs (CGSAddWindowsToSpaces /
-/// CGSRemoveWindowsFromSpaces) which is the only reliable cross-Space window
-/// movement method — the same approach used by yabai, Rectangle, and Amethyst.
-fn pull_iterm_to_current_space() {
-    // Find iTerm's PID.
-    let Ok(output) = Command::new("pgrep").args(["-ox", "iTerm2"]).output() else {
+/// Move iTerm windows to the **same macOS Space as AgentManager's window**.
+///
+/// Uses a bundled Swift helper (`move-to-space`) that:
+/// 1. Finds AgentManager's window by PID → queries its Space via CGSCopySpacesForWindows
+/// 2. Moves all iTerm windows (by PID) to that Space via CGSAddWindowsToSpaces
+///
+/// This is more reliable than `CGSGetActiveSpace` because the target Space is
+/// derived from AgentManager's actual window, not from a global "active" value
+/// that can shift when AppleEvents are sent to iTerm.
+fn pull_iterm_to_agent_manager_space() {
+    let Ok(iterm_output) = Command::new("pgrep").args(["-ox", "iTerm2"]).output() else {
         return;
     };
-    let pid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if pid.is_empty() {
+    let iterm_pid = String::from_utf8_lossy(&iterm_output.stdout).trim().to_string();
+    if iterm_pid.is_empty() {
         return;
     }
 
-    // The helper binary sits next to our own executable inside the .app bundle.
+    let my_pid = std::process::id().to_string();
+
     let helper = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("move-to-space")));
@@ -202,10 +206,14 @@ fn pull_iterm_to_current_space() {
         return;
     };
 
-    match Command::new(&helper).arg(&pid).output() {
+    match Command::new(&helper).args([&my_pid, &iterm_pid]).output() {
         Ok(out) => {
             let moved = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            log::info!("pulled {moved} iTerm window(s) to current Space");
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if !stderr.is_empty() {
+                log::warn!("move-to-space stderr: {stderr}");
+            }
+            log::info!("pulled {moved} iTerm window(s) to AgentManager's Space");
         }
         Err(err) => {
             log::warn!("move-to-space failed: {err}");
@@ -262,7 +270,7 @@ pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<Arr
     // `tell application "iTerm"` can cause macOS to switch the active
     // Space to wherever iTerm's windows live, and CGSGetActiveSpace in
     // the helper would capture the wrong Space.
-    pull_iterm_to_current_space();
+    pull_iterm_to_agent_manager_space();
     std::thread::sleep(std::time::Duration::from_millis(400));
 
     // Phase 1: which iTerm window contains each session?
