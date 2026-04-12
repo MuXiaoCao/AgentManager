@@ -217,6 +217,10 @@ pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<Arr
 
     let (arranged, apply_skipped) = apply_bounds(&assignments)?;
 
+    // Bring iTerm to the foreground so the user immediately sees the
+    // arranged windows.
+    let _ = Command::new("open").args(["-a", "iTerm"]).status();
+
     Ok(ArrangeReport {
         arranged,
         skipped: blank_count + missing_count + apply_skipped,
