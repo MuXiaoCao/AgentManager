@@ -194,6 +194,10 @@ impl AppState {
 
     // ── session persistence ────────────────────────────────────────────
 
+    pub fn save_sessions_pub(&self) -> anyhow::Result<()> {
+        self.save_sessions()
+    }
+
     fn sessions_path() -> Option<std::path::PathBuf> {
         let mut p = dirs::config_dir()?;
         p.push("agent-manager");

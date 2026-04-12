@@ -33,3 +33,18 @@ for path in \
 do
   patch_plist "$path"
 done
+
+# ── Compile and bundle the move-to-space helper ─────────────────────
+SWIFT_SRC="$ROOT/scripts/move-to-space.swift"
+if [ -f "$SWIFT_SRC" ]; then
+  for app_dir in \
+    "$ROOT/src-tauri/target/release/bundle/macos/AgentManager.app/Contents/MacOS" \
+    "$ROOT/src-tauri/target/debug/bundle/macos/AgentManager.app/Contents/MacOS"
+  do
+    if [ -d "$app_dir" ]; then
+      echo "[patch-plist] compiling move-to-space helper → $app_dir"
+      swiftc -O "$SWIFT_SRC" -o "$app_dir/move-to-space" \
+        -framework CoreGraphics -framework AppKit 2>&1 || true
+    fi
+  done
+fi

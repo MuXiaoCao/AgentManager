@@ -44,6 +44,7 @@
     "rename": "Rename…",
     "jump": "Jump to iTerm",
     "arrangeAll": "Arrange all iTerm windows",
+    "clearNotifications": "Mark notifications handled",
     "dismiss": "Dismiss",
     "reopen": "Reopen in iTerm",
     "deleteHistory": "Delete from history",

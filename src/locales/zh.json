@@ -43,6 +43,7 @@
     "rename": "重命名…",
     "jump": "跳转到 iTerm",
     "arrangeAll": "整理所有 iTerm 窗口",
+    "clearNotifications": "标记通知已处理",
     "dismiss": "移除",
     "reopen": "在 iTerm 中重新打开",
     "deleteHistory": "从历史中删除",

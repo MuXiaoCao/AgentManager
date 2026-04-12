@@ -24,6 +24,7 @@ pub fn run() {
             commands::get_sessions,
             commands::dismiss_session,
             commands::delete_session,
+            commands::clear_notifications,
             commands::rename_session,
             commands::reopen_session,
             commands::jump_to_iterm,

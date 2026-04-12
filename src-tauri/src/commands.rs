@@ -47,6 +47,15 @@ pub fn reopen_session(
         .map_err(|e| e.to_string())
 }
 
+/// Clear the notification badge on a card (mark all as handled).
+#[command]
+pub fn clear_notifications(state: State<'_, AppState>, session_id: String) {
+    if let Some(mut entry) = state.sessions.get_mut(&session_id) {
+        entry.notification_count = 0;
+    }
+    let _ = state.save_sessions_pub();
+}
+
 /// Persist a display alias for `session_id`. This is purely cosmetic —
 /// it only affects the card title inside AgentManager, not the iTerm tab.
 #[command]

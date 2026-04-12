@@ -178,13 +178,43 @@ return outText
     Ok(map)
 }
 
-/// Phase 3: move each window to the **current** macOS Space and set its bounds.
-///
-/// `set bounds` alone only repositions within the window's current Space. If
-/// the user moved AgentManager to Space 2 but iTerm windows live on Space 1,
-/// they'd be arranged on the wrong desktop. The fix: miniaturize → delay →
-/// deminiaturize each window first. macOS always restores a deminiaturized
-/// window on the user's **current** Space, regardless of where it was before.
+/// Move iTerm windows to the user's current macOS Space using the bundled
+/// `move-to-space` helper (compiled from scripts/move-to-space.swift). The
+/// helper uses private CoreGraphics APIs (CGSAddWindowsToSpaces /
+/// CGSRemoveWindowsFromSpaces) which is the only reliable cross-Space window
+/// movement method — the same approach used by yabai, Rectangle, and Amethyst.
+fn pull_iterm_to_current_space() {
+    // Find iTerm's PID.
+    let Ok(output) = Command::new("pgrep").args(["-ox", "iTerm2"]).output() else {
+        return;
+    };
+    let pid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if pid.is_empty() {
+        return;
+    }
+
+    // The helper binary sits next to our own executable inside the .app bundle.
+    let helper = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("move-to-space")));
+    let Some(helper) = helper.filter(|p| p.exists()) else {
+        log::warn!("move-to-space helper not found next to executable");
+        return;
+    };
+
+    match Command::new(&helper).arg(&pid).output() {
+        Ok(out) => {
+            let moved = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            log::info!("pulled {moved} iTerm window(s) to current Space");
+        }
+        Err(err) => {
+            log::warn!("move-to-space failed: {err}");
+        }
+    }
+}
+
+/// Phase 3: set bounds on each unique iTerm window. Called AFTER
+/// `pull_iterm_to_current_space` has moved them to the right desktop.
 fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usize)> {
     if assignments.is_empty() {
         return Ok((0, 0));
@@ -193,19 +223,7 @@ fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usi
     script.push_str("tell application \"iTerm\"\n");
     for &(wid, x1, y1, x2, y2) in assignments {
         script.push_str(&format!(
-            r#"  try
-    set targetW to (first window whose id is {wid})
-    -- Pull the window to the current Space via miniaturize round-trip
-    set miniaturized of targetW to true
-    delay 0.15
-    set miniaturized of targetW to false
-    delay 0.25
-    set bounds of targetW to {{{x1}, {y1}, {x2}, {y2}}}
-    set arranged to arranged + 1
-  on error
-    set skipped to skipped + 1
-  end try
-"#
+            "  try\n    set bounds of (first window whose id is {wid}) to {{{x1}, {y1}, {x2}, {y2}}}\n    set arranged to arranged + 1\n  on error\n    set skipped to skipped + 1\n  end try\n"
         ));
     }
     script.push_str("end tell\n");
@@ -280,7 +298,13 @@ pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<Arr
         assignments.push((wid, x1, y1, x2, y2));
     }
 
-    // Phase 4: apply bounds to each unique window.
+    // Phase 4a: pull iTerm windows to the current macOS Space so they land
+    // on the same desktop the user is looking at.
+    pull_iterm_to_current_space();
+
+    // Phase 4b: apply bounds to each unique window.
+    // Short delay to let the Space transition settle.
+    std::thread::sleep(std::time::Duration::from_millis(300));
     let (arranged, apply_skipped) = apply_bounds(&assignments)?;
 
     Ok(ArrangeReport {

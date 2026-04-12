@@ -144,6 +144,14 @@ export default function App() {
     [showToast, t]
   )
 
+  const handleClearNotifications = useCallback(
+    async (sessionId: string) => {
+      await invoke('clear_notifications', { sessionId })
+      refreshSessions()
+    },
+    [refreshSessions]
+  )
+
   const handleDismiss = useCallback(
     async (sessionId: string) => {
       await invoke('dismiss_session', { sessionId })
@@ -194,6 +202,12 @@ export default function App() {
         disabled:
           !entry.iterm_session_id || entry.iterm_session_id === 'unknown',
       },
+      {
+        id: 'clearNotif',
+        label: t('menu.clearNotifications'),
+        onSelect: () => handleClearNotifications(entry.session_id),
+        disabled: entry.notification_count === 0,
+      },
       { id: 'sep', label: '', separator: true, onSelect: () => {} },
       {
         id: 'arrange',
@@ -208,7 +222,7 @@ export default function App() {
         danger: true,
       },
     ],
-    [handleJump, handleArrangeAll, handleDismiss, t]
+    [handleJump, handleClearNotifications, handleArrangeAll, handleDismiss, t]
   )
 
   const buildHistoryMenu = useCallback(
