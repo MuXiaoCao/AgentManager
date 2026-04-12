@@ -9,7 +9,7 @@
     "hint": "在 iTerm 中启动一个 <1>claude</1> 会话，它会自动出现在这里。"
   },
   "card": {
-    "tooltip": "右键查看操作 · 双击跳转到对应的 iTerm 会话",
+    "tooltip": "点击跳转到对应的 iTerm 会话 · 右键查看操作",
     "badge": "{{count}} 条通知",
     "status": {
       "started": "运行中",

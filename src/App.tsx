@@ -187,10 +187,6 @@ export default function App() {
     [buildMenu]
   )
 
-  const handleSelect = useCallback((sessionId: string) => {
-    setSelectedId(sessionId)
-  }, [])
-
   const closeMenu = useCallback(() => setMenu(null), [])
 
   const handleToggleLang = useCallback(() => {
@@ -241,7 +237,7 @@ export default function App() {
               entry={s}
               isRenaming={renamingId === s.session_id}
               isSelected={selectedId === s.session_id}
-              onClick={() => handleSelect(s.session_id)}
+              onClick={() => handleJump(s.session_id)}
               onContextMenu={(ev) => openMenu(s, ev)}
               onDoubleClick={() => handleJump(s.session_id)}
               onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}

@@ -32,9 +32,17 @@ fn is_blank(id: &str) -> bool {
 
 /// Activate iTerm and focus the tab/session whose session id matches.
 ///
-/// iTerm's `current tab` / `current session` properties are read-only, so we
-/// can't use assignment. `tell session to select` is the idiomatic command
-/// and handles propagating the selection up through its tab and window.
+/// Done in two steps:
+///
+/// 1. `tell s to select` inside iTerm — switches the target session to be
+///    the current split pane, which propagates up to its tab and window.
+///    iTerm's `current tab` / `current session` are read-only so we can't
+///    use property assignment.
+/// 2. `open -a iTerm` as a separate subprocess — forces iTerm to the
+///    foreground. This is more reliable than AppleScript's `activate`
+///    because `open` is LaunchServices-backed and isn't subject to
+///    focus-stealing prevention when another app (e.g. AgentManager
+///    itself) is currently frontmost.
 pub fn jump_to(iterm_session_id: &str) -> Result<()> {
     if is_blank(iterm_session_id) {
         return Err(anyhow!("no iTerm session id recorded"));
@@ -48,7 +56,6 @@ tell application "iTerm"
       repeat with s in sessions of t
         if unique id of s is "{sid}" then
           tell s to select
-          activate
           return "ok"
         end if
       end repeat
@@ -65,6 +72,13 @@ end tell
             "iTerm session {iterm_session_id} not found (maybe closed?)"
         ));
     }
+
+    // Force iTerm into the foreground. `open -a` bypasses macOS's
+    // focus-stealing prevention. We ignore the exit code: even if iTerm
+    // can't be raised (e.g. it was quit between select and open), the
+    // session select inside iTerm already succeeded.
+    let _ = Command::new("open").args(["-a", "iTerm"]).status();
+
     Ok(())
 }
 

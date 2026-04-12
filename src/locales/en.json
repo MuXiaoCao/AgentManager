@@ -9,7 +9,7 @@
     "hint": "Start a <1>claude</1> session in iTerm and it will appear here."
   },
   "card": {
-    "tooltip": "Right-click for actions · double-click to jump to iTerm",
+    "tooltip": "Click to jump to iTerm · right-click for actions",
     "badge": "{{count}} notification",
     "badge_other": "{{count}} notifications",
     "status": {
