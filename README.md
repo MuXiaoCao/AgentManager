@@ -1,36 +1,71 @@
 # AgentManager
 
-A macOS desktop dashboard for Claude Code sessions. Built with Tauri 2 + Rust +
-React. Session data flows in through a local HTTP hook (`POST /api/notify`),
-gets rendered as cards in a left-docked side panel, and each card can jump
-back to its original iTerm session with a double click.
+A macOS desktop dashboard for Claude Code sessions. Built with Tauri 2 + Rust + React.
+
+![macOS](https://img.shields.io/badge/macOS-12.0%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
+## Install (macOS)
+
+### Option A: Download DMG (recommended)
+
+1. Go to [**Releases**](https://github.com/MuXiaoCao/AgentManager/releases/latest)
+2. Download `AgentManager_x.x.x_aarch64.dmg` (Apple Silicon) or `AgentManager_x.x.x_x64.dmg` (Intel)
+3. Open the DMG, drag `AgentManager.app` into `/Applications`
+4. First launch: right-click → Open → click "Open" in the dialog (Gatekeeper unsigned app)
+5. AgentManager will auto-dock to the left edge of your screen
+
+### Option B: Build from source
+
+```bash
+# Prerequisites: Rust 1.77+, Node 18+, Xcode CLI tools, jq
+git clone https://github.com/MuXiaoCao/AgentManager.git
+cd AgentManager
+npm install
+npm run tauri:build
+# Output: src-tauri/target/release/bundle/macos/AgentManager.app
+cp -R src-tauri/target/release/bundle/macos/AgentManager.app /Applications/
+```
+
+### Setup Claude Code Hook
+
+On first launch, if the hook isn't installed yet, a blue banner appears at the top — click **"Install hook"** and you're done. Or run it manually:
+
+```bash
+open -a AgentManager
+# Then click the blue "Install hook" / "一键安装" banner
+```
+
+This writes `~/.claude-dashboard/hook.sh` and adds `SessionStart` + `Stop` + `SessionEnd` hooks to `~/.claude/settings.json`. Existing hooks are preserved. **Restart any running Claude sessions** for the hooks to take effect.
 
 ## Features
 
-- **Left-docked panel** — on launch, the main window pins to the left edge of
-  the primary monitor and stretches to full screen height, so it always stays
-  visible next to your terminals.
-- **Right-click on any card** to:
-  - **Rename** — assign a friendly alias that persists across launches
-    (`~/.config/agent-manager/aliases.json`).
-  - **Jump to iTerm** — `activate` iTerm and focus the exact tab/session the
-    card represents (uses the session's `ITERM_SESSION_ID`).
-  - **Arrange all iTerm windows** — tiles every tracked session's iTerm window
-    into a grid on the remaining screen area (the left dock strip is reserved
-    for the main window).
-  - **Dismiss** — remove a stale card.
-- **Automatic hook setup** — a one-click installer writes the shared
-  `~/.claude-dashboard/hook.sh` script and registers it under **three** Claude
-  events in `~/.claude/settings.json`: `SessionStart`, `Stop`, `SessionEnd`.
-  Existing unrelated hooks are preserved and additions are idempotent.
-- **Live updates** via a Tauri event (`session-updated`) — no polling.
+### Dashboard (面板)
 
-## Why three hook events?
+- **Left-docked panel** — auto-pins to the left edge at full screen height on launch.
+- **Live session cards** — Claude sessions appear the moment they start (via `SessionStart` hook), not just when they end.
+- **Click a card** → jumps to the corresponding iTerm window/tab/session and brings it to the foreground.
+- **Right-click a card** →
+  - **Rename** — inline editable alias, persisted across restarts.
+  - **Jump to iTerm** — focuses the exact split pane.
+  - **Arrange all iTerm windows** — tiles every tracked session's window into a grid on the area right of the dashboard.
+  - **Dismiss** / **Delete from history**.
+- **Session history persists** — survived cards are saved to `~/Library/Application Support/agent-manager/sessions.json` and restored on restart. Ended sessions can be reopened with `claude --resume`.
+- **Worktree dedup** — when you switch worktrees in the same iTerm pane, the old card is automatically replaced.
 
-The original inspiration for this rewrite (a closed-source app called
-AgentPulse) only installed `Stop` and `SessionEnd` hooks, which meant running
-Claude sessions never appeared in the dashboard until they exited. AgentManager
-adds `SessionStart` so the card shows up the moment you launch Claude.
+### Claude History (Claude 历史)
+
+A second tab scans `~/.claude/` to show **all** Claude Code sessions ever run on this machine:
+
+- **Session metadata** from `~/.claude/sessions/*.json`
+- **Conversation files** from `~/.claude/projects/<project>/<session>.jsonl`
+- First user prompt extracted as a **summary preview** (reads ≤64KB per file)
+- **Search** by project path, prompt text, or session ID
+- **Click any entry** → opens a new iTerm window and runs `claude --resume <session_id>` in the original cwd
+
+### Other
+
+- **i18n** — English / 中文 toggle (🌐 button in header), persisted in localStorage.
+- **Automatic hook installer** — one-click, idempotent, preserves existing hooks.
 
 ## Architecture
 
@@ -40,16 +75,17 @@ adds `SessionStart` so the card shows up the moment you launch Claude.
 │          (Tauri 2 desktop app)                   │
 ├──────────────────────────────────────────────────┤
 │  React frontend  ◄─IPC─►  Rust backend           │
+│  - Tab bar (Dashboard / Claude History)          │
 │  - Session cards          - DashMap state        │
-│  - Context menu           - axum HTTP server     │
-│  - Toasts                 - AppleScript bridge   │
+│  - Context menu           - axum HTTP :19280     │
+│  - Inline rename          - AppleScript bridge   │
+│  - i18n (en/zh)           - Claude history scan  │
 └───────────────────┬──────────────────────────────┘
                     │ HTTP POST /api/notify
                     ▼
          ~/.claude-dashboard/hook.sh
                     ▲
                     │ stdin JSON (hook_event_name, session_id, cwd, ...)
-                    │
               Claude Code hooks
          (SessionStart / Stop / SessionEnd)
 ```
@@ -58,46 +94,49 @@ adds `SessionStart` so the card shows up the moment you launch Claude.
 
 | Command | Description |
 |---|---|
-| `get_sessions` | Returns all tracked sessions, newest first. |
-| `dismiss_session(session_id)` | Removes a session from the dashboard. |
-| `rename_session(session_id, alias)` | Set/clear a user alias; persisted. |
-| `jump_to_iterm(session_id)` | Activates iTerm and focuses the matching tab. |
-| `arrange_iterm_windows()` | Tiles every tracked session's iTerm window. |
-| `check_hook_config()` | Reports which events are currently installed. |
-| `install_claude_hook()` | Idempotently writes hook.sh + settings.json. |
+| `get_sessions` | Returns all tracked sessions, newest first |
+| `dismiss_session` | Remove from active dashboard |
+| `delete_session` | Permanently remove from history + disk |
+| `rename_session` | Set/clear a display alias (persisted) |
+| `reopen_session` | Open new iTerm + `claude --resume` |
+| `jump_to_iterm` | Focus the session's iTerm window/tab/pane |
+| `arrange_iterm_windows` | Tile tracked windows into a grid |
+| `list_claude_sessions` | Scan `~/.claude/` for all historical sessions |
+| `check_hook_config` | Report installed hook events |
+| `install_claude_hook` | Idempotently write hook.sh + settings.json |
 
 ## HTTP API
 
 ```
-POST /api/notify
+POST http://127.0.0.1:19280/api/notify
 Content-Type: application/json
 
 {
-  "session_id": "abc123",
+  "session_id": "abc-123",
   "cwd": "/path/to/project",
-  "iterm_session_id": "A1B2C3...",
+  "iterm_session_id": "w0t0p0:UUID",
   "event_type": "sessionstart",
   "agent": "claude"
 }
+
+→ 200 ok
 ```
 
-Responds with `200 ok` on success, `422` on malformed input. A
-`session-updated` event is emitted to the frontend each time the state mutates.
+## Data files
+
+| Path | Purpose |
+|---|---|
+| `~/Library/Application Support/agent-manager/sessions.json` | Persisted session state (max 200) |
+| `~/Library/Application Support/agent-manager/aliases.json` | Card rename aliases |
+| `~/.claude-dashboard/hook.sh` | Shared hook script |
+| `~/.claude/settings.json` | Claude Code hooks config (modified by installer) |
 
 ## Development
 
-Requirements: Rust 1.77+, Node 18+, Xcode command line tools, `jq` (for the
-hook script at runtime), `osascript` (ships with macOS).
-
 ```bash
 npm install
-npm run tauri:dev      # runs Vite + Tauri with HMR
-npm run tauri:build    # produces release .app and .dmg
-```
-
-A debug build lives at:
-```
-src-tauri/target/debug/bundle/macos/AgentManager.app
+npm run tauri:dev      # Vite + Tauri with HMR
+npm run tauri:build    # release .app + .dmg + auto-patch Info.plist
 ```
 
 ## License
