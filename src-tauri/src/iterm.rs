@@ -124,10 +124,10 @@ tell application "System Events"
     set arranged to 0
     repeat with i from 1 to n
       set idx to i - 1
-      set col to idx mod cols
-      set row to idx div cols
-      set x1 to regionX + col * cellW
-      set y1 to regionY + row * cellH
+      set gridCol to idx mod cols
+      set gridRow to idx div cols
+      set x1 to regionX + gridCol * cellW
+      set y1 to regionY + gridRow * cellH
       try
         set position of window i to {{x1, y1}}
         set size of window i to {{cellW, cellH}}
