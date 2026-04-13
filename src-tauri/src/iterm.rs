@@ -98,54 +98,46 @@ pub struct TileRegion {
 /// does NOT trigger the Dock's "switch to app's Space" behavior, so windows
 /// stay on the user's current desktop.
 fn apply_bounds_via_system_events(region: &TileRegion) -> Result<(usize, usize)> {
-    // The grid computation happens inside AppleScript so we only need one
-    // osascript call. We pass the region as parameters.
-    let script = format!(
-        r#"
-set regionX to {rx}
-set regionY to {ry}
-set regionW to {rw}
-set regionH to {rh}
-
+    // First, count iTerm windows via a tiny System Events query.
+    let count_script = r#"
 tell application "System Events"
-  tell process "iTerm2"
-    set winList to every window
-    set n to count of winList
-    if n is 0 then return "0,0"
-
-    -- Compute grid: cols = ceil(sqrt(n)), rows = ceil(n / cols)
-    set cols to (round ((n ^ 0.5) + 0.4999) rounding up) as integer
-    if cols < 1 then set cols to 1
-    set rows to (round ((n / cols) + 0.4999) rounding up) as integer
-    if rows < 1 then set rows to 1
-    set cellW to regionW div cols
-    set cellH to regionH div rows
-
-    set arranged to 0
-    repeat with i from 1 to n
-      set idx to i - 1
-      set gridCol to idx mod cols
-      set gridRow to idx div cols
-      set x1 to regionX + gridCol * cellW
-      set y1 to regionY + gridRow * cellH
-      try
-        set position of window i to {{x1, y1}}
-        set size of window i to {{cellW, cellH}}
-        set arranged to arranged + 1
-      end try
-    end repeat
-
-    -- Raise all windows: set frontmost to bring entire app layer forward.
-    set frontmost to true
-  end tell
+  return count of windows of process "iTerm2"
 end tell
-return (arranged as string) & ",0"
-"#,
-        rx = region.x,
-        ry = region.y,
-        rw = region.width,
-        rh = region.height,
-    );
+"#;
+    let count_out = run_osascript(count_script)?;
+    let n: usize = count_out.trim().parse().unwrap_or(0);
+    if n == 0 {
+        return Ok((0, 0));
+    }
+
+    // Compute the grid entirely in Rust — no math in AppleScript.
+    let cols = ((n as f64).sqrt().ceil()) as i32;
+    let rows = ((n as f64 / cols as f64).ceil()) as i32;
+    let cell_w = (region.width / cols).max(1);
+    let cell_h = (region.height / rows).max(1);
+
+    // Build a minimal AppleScript that only sets position + size using
+    // pre-computed literal values. No math, no reserved-word variables,
+    // no round/div/mod — just plain `set position of window i to {x, y}`.
+    let mut script = String::new();
+    script.push_str("tell application \"System Events\"\n");
+    script.push_str("  tell process \"iTerm2\"\n");
+    for i in 0..n {
+        let col = (i as i32) % cols;
+        let row = (i as i32) / cols;
+        let x = region.x + col * cell_w;
+        let y = region.y + row * cell_h;
+        let win_idx = i + 1; // AppleScript windows are 1-indexed
+        script.push_str(&format!(
+            "    try\n      set position of window {idx} to {{{x}, {y}}}\n      set size of window {idx} to {{{w}, {h}}}\n    end try\n",
+            idx = win_idx, x = x, y = y, w = cell_w, h = cell_h
+        ));
+    }
+    script.push_str("    set frontmost to true\n");
+    script.push_str("  end tell\n");
+    script.push_str("end tell\n");
+    script.push_str(&format!("return \"{n},0\"\n", n = n));
+
     let out = run_osascript(&script)?;
     Ok(parse_pair(out.trim()))
 }
