@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Context, Result};
 use std::process::Command;
 
+/// Run AppleScript by spawning `/usr/bin/osascript`. Suitable for commands
+/// that don't need Accessibility permission (e.g. talking to iTerm directly).
 fn run_osascript(script: &str) -> Result<String> {
     let out = Command::new("osascript")
         .args(["-l", "AppleScript", "-e", script])
@@ -14,6 +16,72 @@ fn run_osascript(script: &str) -> Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Run AppleScript **in-process** via `NSAppleScript`. This uses the calling
+/// app's (AgentManager's) Accessibility permission instead of osascript's,
+/// which solves the "osascript不允许辅助访问" (-25211) error for System Events
+/// commands that require Accessibility.
+#[cfg(target_os = "macos")]
+fn run_applescript_inline(source: &str) -> Result<String> {
+    use objc::{class, msg_send, sel, sel_impl};
+    use objc::runtime::Object;
+    use std::ffi::{CStr, CString};
+
+    let source_c = CString::new(source).context("script contains null byte")?;
+
+    unsafe {
+        // NSString *src = [NSString stringWithUTF8String:source];
+        let src_ns: *mut Object =
+            msg_send![class!(NSString), stringWithUTF8String: source_c.as_ptr()];
+        if src_ns.is_null() {
+            return Err(anyhow!("failed to create NSString from script source"));
+        }
+
+        // NSAppleScript *script = [[NSAppleScript alloc] initWithSource:src];
+        let script_obj: *mut Object = msg_send![class!(NSAppleScript), alloc];
+        let script_obj: *mut Object = msg_send![script_obj, initWithSource: src_ns];
+        if script_obj.is_null() {
+            return Err(anyhow!("NSAppleScript initWithSource returned nil"));
+        }
+
+        // NSDictionary *error = nil;
+        // NSAppleEventDescriptor *result = [script executeAndReturnError:&error];
+        let mut error_dict: *mut Object = std::ptr::null_mut();
+        let result: *mut Object =
+            msg_send![script_obj, executeAndReturnError: &mut error_dict];
+
+        if result.is_null() {
+            // Extract error message from the NSDictionary.
+            let err_msg = if !error_dict.is_null() {
+                let key: *mut Object =
+                    msg_send![class!(NSString), stringWithUTF8String: b"NSAppleScriptErrorMessage\0".as_ptr()];
+                let msg_ns: *mut Object = msg_send![error_dict, objectForKey: key];
+                if !msg_ns.is_null() {
+                    let cstr: *const std::os::raw::c_char = msg_send![msg_ns, UTF8String];
+                    CStr::from_ptr(cstr).to_string_lossy().into_owned()
+                } else {
+                    "unknown NSAppleScript error".to_string()
+                }
+            } else {
+                "unknown NSAppleScript error".to_string()
+            };
+            let _: () = msg_send![script_obj, release];
+            return Err(anyhow!("AppleScript error: {}", err_msg));
+        }
+
+        // NSString *output = [result stringValue];
+        let string_val: *mut Object = msg_send![result, stringValue];
+        let output = if !string_val.is_null() {
+            let cstr: *const std::os::raw::c_char = msg_send![string_val, UTF8String];
+            CStr::from_ptr(cstr).to_string_lossy().into_owned()
+        } else {
+            String::new()
+        };
+
+        let _: () = msg_send![script_obj, release];
+        Ok(output)
+    }
 }
 
 fn normalize(raw: &str) -> &str {
@@ -104,7 +172,7 @@ tell application "System Events"
   return count of windows of process "iTerm2"
 end tell
 "#;
-    let count_out = run_osascript(count_script)?;
+    let count_out = run_applescript_inline(count_script)?;
     let n: usize = count_out.trim().parse().unwrap_or(0);
     if n == 0 {
         return Ok((0, 0));
@@ -138,7 +206,7 @@ end tell
     script.push_str("end tell\n");
     script.push_str(&format!("return \"{n},0\"\n", n = n));
 
-    let out = run_osascript(&script)?;
+    let out = run_applescript_inline(&script)?;
     Ok(parse_pair(out.trim()))
 }
 
