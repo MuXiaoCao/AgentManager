@@ -94,9 +94,12 @@ fn compute_region(app: &tauri::AppHandle) -> anyhow::Result<TileRegion> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| anyhow::anyhow!("main window missing"))?;
+    // Use the monitor AgentManager is CURRENTLY on, not primary_monitor().
+    // The user may have dragged AgentManager to a secondary display.
     let monitor = window
-        .primary_monitor()?
-        .ok_or_else(|| anyhow::anyhow!("no primary monitor"))?;
+        .current_monitor()?
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or_else(|| anyhow::anyhow!("no monitor found"))?;
     let scale = monitor.scale_factor();
 
     let mon_pos: PhysicalPosition<i32> = *monitor.position();

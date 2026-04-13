@@ -256,11 +256,13 @@ end tell
         let y = region.y + row * cell_h;
         let win_idx = i + 1; // AppleScript windows are 1-indexed
         script.push_str(&format!(
-            "    try\n      set position of window {idx} to {{{x}, {y}}}\n      set size of window {idx} to {{{w}, {h}}}\n    end try\n",
+            "    try\n      set position of window {idx} to {{{x}, {y}}}\n      set size of window {idx} to {{{w}, {h}}}\n      perform action \"AXRaise\" of window {idx}\n    end try\n",
             idx = win_idx, x = x, y = y, w = cell_w, h = cell_h
         ));
     }
-    script.push_str("    set frontmost to true\n");
+    // NOTE: intentionally NOT setting frontmost — that triggers Dock's
+    // space-switching behavior. AXRaise on each window is enough to
+    // bring them above other windows on the current Space.
     script.push_str("  end tell\n");
     script.push_str("end tell\n");
     script.push_str(&format!("return \"{n},0\"\n", n = n));
