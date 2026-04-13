@@ -78,21 +78,15 @@ pub fn jump_to_iterm(
     iterm::jump_to(&entry.iterm_session_id).map_err(|e| e.to_string())
 }
 
-/// Arrange iTerm windows for all current sessions into a grid on the primary
-/// monitor, excluding the main-window strip on the left.
+/// Arrange ALL iTerm windows into a grid on the primary monitor, excluding
+/// the main-window strip on the left. Uses System Events (not iTerm
+/// AppleScript) to avoid macOS Space switching.
 #[command]
 pub fn arrange_iterm_windows(
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
 ) -> Result<ArrangeReport, String> {
-    let sessions = state.list_sessions();
-    let iterm_ids: Vec<String> = sessions
-        .into_iter()
-        .map(|s| s.iterm_session_id)
-        .collect();
-
     let region = compute_region(&app).map_err(|e| e.to_string())?;
-    iterm::arrange_windows(&iterm_ids, region).map_err(|e| e.to_string())
+    iterm::arrange_windows(region).map_err(|e| e.to_string())
 }
 
 fn compute_region(app: &tauri::AppHandle) -> anyhow::Result<TileRegion> {

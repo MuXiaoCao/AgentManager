@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Context, Result};
-use std::collections::HashMap;
 use std::process::Command;
 
 fn run_osascript(script: &str) -> Result<String> {
@@ -94,146 +93,89 @@ pub struct TileRegion {
     pub height: i32,
 }
 
-fn resolve_window_ids(sids: &[&str]) -> Result<HashMap<String, i64>> {
-    let list_items: Vec<String> = sids
-        .iter()
-        .map(|s| format!("\"{}\"", s.replace('"', "\\\"")))
-        .collect();
+/// Set position + size for ALL iTerm windows using System Events
+/// (Accessibility API). Unlike `tell application "iTerm"`, System Events
+/// does NOT trigger the Dock's "switch to app's Space" behavior, so windows
+/// stay on the user's current desktop.
+fn apply_bounds_via_system_events(region: &TileRegion) -> Result<(usize, usize)> {
+    // The grid computation happens inside AppleScript so we only need one
+    // osascript call. We pass the region as parameters.
     let script = format!(
         r#"
-set targetSids to {{{targets}}}
-set sidCount to count of targetSids
-set outText to ""
-repeat with i from 1 to sidCount
-  set targetSid to item i of targetSids
-  set foundWid to ""
-  tell application "iTerm"
-    repeat with w in windows
-      set wid to id of w
-      repeat with t in tabs of w
-        repeat with s in sessions of t
-          if unique id of s is targetSid then
-            set foundWid to wid as string
-            exit repeat
-          end if
-        end repeat
-        if foundWid is not "" then exit repeat
-      end repeat
-      if foundWid is not "" then exit repeat
+set regionX to {rx}
+set regionY to {ry}
+set regionW to {rw}
+set regionH to {rh}
+
+tell application "System Events"
+  tell process "iTerm2"
+    set winList to every window
+    set n to count of winList
+    if n is 0 then return "0,0"
+
+    -- Compute grid: cols = ceil(sqrt(n)), rows = ceil(n / cols)
+    set cols to (round ((n ^ 0.5) + 0.4999) rounding up) as integer
+    if cols < 1 then set cols to 1
+    set rows to (round ((n / cols) + 0.4999) rounding up) as integer
+    if rows < 1 then set rows to 1
+    set cellW to regionW div cols
+    set cellH to regionH div rows
+
+    set arranged to 0
+    repeat with i from 1 to n
+      set idx to i - 1
+      set col to idx mod cols
+      set row to idx div cols
+      set x1 to regionX + col * cellW
+      set y1 to regionY + row * cellH
+      try
+        set position of window i to {{x1, y1}}
+        set size of window i to {{cellW, cellH}}
+        set arranged to arranged + 1
+      end try
     end repeat
+
+    -- Raise all windows: set frontmost to bring entire app layer forward.
+    set frontmost to true
   end tell
-  set outText to outText & targetSid & "=" & foundWid & linefeed
-end repeat
-return outText
+end tell
+return (arranged as string) & ",0"
 "#,
-        targets = list_items.join(", ")
+        rx = region.x,
+        ry = region.y,
+        rw = region.width,
+        rh = region.height,
     );
-    let out = run_osascript(&script)?;
-    let mut map = HashMap::new();
-    for line in out.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some((sid, wid_str)) = line.split_once('=') {
-            if let Ok(wid) = wid_str.trim().parse::<i64>() {
-                map.insert(sid.to_string(), wid);
-            }
-        }
-    }
-    Ok(map)
-}
-
-fn apply_bounds(assignments: &[(i64, i32, i32, i32, i32)]) -> Result<(usize, usize)> {
-    if assignments.is_empty() {
-        return Ok((0, 0));
-    }
-    let mut script = String::from("set arranged to 0\nset skipped to 0\n");
-    script.push_str("tell application \"iTerm\"\n");
-
-    // Phase A: set bounds for each window.
-    for &(wid, x1, y1, x2, y2) in assignments {
-        script.push_str(&format!(
-            "  try\n    set bounds of (first window whose id is {wid}) to {{{x1}, {y1}, {x2}, {y2}}}\n    set arranged to arranged + 1\n  on error\n    set skipped to skipped + 1\n  end try\n"
-        ));
-    }
-
-    // Phase B: raise ALL arranged windows so they're all visible in front
-    // of other apps. Iterate last-to-first so window 1 ends up on top.
-    for &(wid, _, _, _, _) in assignments.iter().rev() {
-        script.push_str(&format!(
-            "  try\n    select (first window whose id is {wid})\n  end try\n"
-        ));
-    }
-    script.push_str("  activate\n");
-
-    script.push_str("end tell\n");
-    script.push_str("return (arranged as string) & \",\" & (skipped as string)\n");
     let out = run_osascript(&script)?;
     Ok(parse_pair(out.trim()))
 }
 
-pub fn arrange_windows(session_ids: &[String], region: TileRegion) -> Result<ArrangeReport> {
-    let live: Vec<&str> = session_ids
-        .iter()
-        .filter(|s| !is_blank(s))
-        .map(|s| normalize(s.as_str()))
-        .collect();
+/// Arrange ALL iTerm windows into a grid on the screen area to the right of
+/// AgentManager. Uses System Events (Accessibility API) instead of iTerm's
+/// own AppleScript to avoid triggering macOS's Dock-based Space switching
+/// (`tell application "iTerm"` causes the desktop to jump to iTerm's "home"
+/// Space even when both apps are on the same desktop).
+pub fn arrange_windows(region: TileRegion) -> Result<ArrangeReport> {
+    let (arranged, skipped) = apply_bounds_via_system_events(&region)?;
 
-    let blank_count = session_ids.len() - live.len();
-
-    if live.is_empty() {
-        return Ok(ArrangeReport {
-            arranged: 0,
-            skipped: blank_count,
-            cols: 0,
-            rows: 0,
-        });
-    }
-
-    let sid_to_wid = resolve_window_ids(&live)?;
-    let missing_count = live.len() - sid_to_wid.len();
-
-    let mut unique_wids: Vec<i64> = Vec::new();
-    for sid in &live {
-        if let Some(&wid) = sid_to_wid.get(*sid) {
-            if !unique_wids.contains(&wid) {
-                unique_wids.push(wid);
-            }
-        }
-    }
-
-    let n = unique_wids.len() as i32;
-    if n == 0 {
-        return Ok(ArrangeReport {
-            arranged: 0,
-            skipped: blank_count + missing_count,
-            cols: 0,
-            rows: 0,
-        });
-    }
-
-    let cols = ((n as f64).sqrt().ceil()) as i32;
-    let rows = ((n as f64 / cols as f64).ceil()) as i32;
-    let cell_w = (region.width / cols).max(1);
-    let cell_h = (region.height / rows).max(1);
-
-    let mut assignments = Vec::with_capacity(n as usize);
-    for (i, &wid) in unique_wids.iter().enumerate() {
-        let col = (i as i32) % cols;
-        let row = (i as i32) / cols;
-        let x1 = region.x + col * cell_w;
-        let y1 = region.y + row * cell_h;
-        assignments.push((wid, x1, y1, x1 + cell_w, y1 + cell_h));
-    }
-
-    let (arranged, apply_skipped) = apply_bounds(&assignments)?;
+    // Compute cols/rows for the report (mirror the AppleScript logic).
+    let n = arranged + skipped;
+    let cols = if n > 0 {
+        ((n as f64).sqrt().ceil()) as usize
+    } else {
+        0
+    };
+    let rows = if cols > 0 {
+        ((n as f64 / cols as f64).ceil()) as usize
+    } else {
+        0
+    };
 
     Ok(ArrangeReport {
         arranged,
-        skipped: blank_count + missing_count + apply_skipped,
-        cols: cols as usize,
-        rows: rows as usize,
+        skipped,
+        cols,
+        rows,
     })
 }
 
