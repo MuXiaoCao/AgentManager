@@ -6,11 +6,13 @@ interface Props {
   entry: SessionEntry
   isRenaming: boolean
   isSelected: boolean
+  isFlashing?: boolean
   onClick: () => void
   onContextMenu: (ev: React.MouseEvent) => void
   onDoubleClick: () => void
   onCommitRename: (newAlias: string | null) => void
   onCancelRename: () => void
+  onClose?: () => void
 }
 
 type Tone = 'active' | 'idle' | 'done'
@@ -74,11 +76,13 @@ export function SessionCard({
   entry,
   isRenaming,
   isSelected,
+  isFlashing,
   onClick,
   onContextMenu,
   onDoubleClick,
   onCommitRename,
   onCancelRename,
+  onClose,
 }: Props) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState('')
@@ -117,6 +121,7 @@ export function SessionCard({
     'card',
     `card--${tone}`,
     isSelected ? 'card--selected' : '',
+    isFlashing ? 'card--flashing' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -129,6 +134,15 @@ export function SessionCard({
       onDoubleClick={onDoubleClick}
       title={t('card.tooltip')}
     >
+      {onClose && (
+        <button
+          className="card__close"
+          onClick={(ev) => { ev.stopPropagation(); onClose(); }}
+          title={entry.last_event === 'sessionend' ? 'Delete' : 'Dismiss'}
+        >
+          ×
+        </button>
+      )}
       <div className="card__top">
         {isRenaming ? (
           <input

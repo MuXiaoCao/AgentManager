@@ -83,11 +83,13 @@ pub fn rename_session(
 pub fn jump_to_iterm(
     state: State<'_, AppState>,
     session_id: String,
+    pulse: Option<bool>,
 ) -> Result<(), String> {
     let Some(entry) = state.sessions.get(&session_id).map(|r| r.value().clone()) else {
         return Err(format!("session {session_id} not found"));
     };
-    iterm::jump_to(&entry.iterm_session_id).map_err(|e| e.to_string())
+    iterm::jump_to(&entry.iterm_session_id, pulse.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 /// Arrange iTerm windows into a grid. If `iterm_session_ids` is provided

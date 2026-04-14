@@ -7,11 +7,13 @@ interface Props {
   entry: SessionEntry
   isRenaming: boolean
   isSelected: boolean
+  isFlashing?: boolean
   onClick: () => void
   onContextMenu: (ev: React.MouseEvent) => void
   onDoubleClick: () => void
   onCommitRename: (newAlias: string | null) => void
   onCancelRename: () => void
+  onClose?: () => void
 }
 
 export function SortableCard(props: Props) {

@@ -21,6 +21,7 @@ import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { SetupBanner } from './components/SetupBanner'
 import { ClaudeHistoryList } from './components/ClaudeHistoryList'
 import { currentLanguage, toggleLanguage } from './i18n'
+import { getTheme, toggleTheme, type Theme } from './theme'
 import type { ArrangeReport, HookStatus, SessionEntry } from './types'
 
 type Tab = 'dashboard' | 'claude-history'
@@ -44,6 +45,7 @@ export default function App() {
     items: MenuItem[]
   } | null>(null)
   const [lang, setLang] = useState(currentLanguage())
+  const [theme, setThemeState] = useState<Theme>(getTheme())
   const [tab, setTab] = useState<Tab>('dashboard')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -133,14 +135,18 @@ export default function App() {
 
   const handleCancelRename = useCallback(() => setRenamingId(null), [])
 
+  const [flashingId, setFlashingId] = useState<string | null>(null)
   const jumpingRef = useRef(false)
-  const handleJump = useCallback(
-    async (sessionId: string) => {
-      if (jumpingRef.current) return // prevent concurrent jumps (double-click race)
+
+  const doJump = useCallback(
+    async (sessionId: string, pulse: boolean) => {
+      if (jumpingRef.current) return
       jumpingRef.current = true
       setSelectedId(sessionId)
+      setFlashingId(sessionId)
+      setTimeout(() => setFlashingId(null), 450)
       try {
-        await invoke('jump_to_iterm', { sessionId })
+        await invoke('jump_to_iterm', { sessionId, pulse })
       } catch (err) {
         showToast(t('toast.jumpFailed', { err: String(err) }))
       } finally {
@@ -247,7 +253,7 @@ export default function App() {
       {
         id: 'jump',
         label: t('menu.jump'),
-        onSelect: () => handleJump(entry.session_id),
+        onSelect: () => doJump(entry.session_id, false),
         disabled:
           !entry.iterm_session_id || entry.iterm_session_id === 'unknown',
       },
@@ -271,7 +277,7 @@ export default function App() {
         danger: true,
       },
     ],
-    [handleJump, handleClearNotifications, handleArrangeAll, handleDismiss, t]
+    [doJump, handleClearNotifications, handleArrangeAll, handleDismiss, t]
   )
 
   const buildHistoryMenu = useCallback(
@@ -312,18 +318,37 @@ export default function App() {
 
   const closeMenu = useCallback(() => setMenu(null), [])
 
-  const handleCardClick = useCallback(
+  // Distinguish single-click (jump, no iTerm pulse) from double-click
+  // (jump + iTerm window pulse). 250ms delay on single-click to detect.
+  const clickTimer = useRef<number | null>(null)
+
+  const handleCardSingleClick = useCallback(
     (entry: SessionEntry) => {
       if (entry.last_event === 'sessionend') {
         handleReopen(entry.session_id)
+        return
+      }
+      if (clickTimer.current) {
+        // Second click arrived → double-click: jump WITH pulse
+        clearTimeout(clickTimer.current)
+        clickTimer.current = null
+        doJump(entry.session_id, true)
       } else {
-        handleJump(entry.session_id)
+        // First click → wait to see if double-click follows
+        const sid = entry.session_id
+        clickTimer.current = window.setTimeout(() => {
+          clickTimer.current = null
+          doJump(sid, false) // single click: no iTerm pulse
+        }, 250)
       }
     },
-    [handleJump, handleReopen]
+    [doJump, handleReopen]
   )
 
   const handleToggleLang = useCallback(() => toggleLanguage(), [])
+  const handleToggleTheme = useCallback(() => {
+    setThemeState(toggleTheme())
+  }, [])
 
   const handleClaudeHistoryReopen = useCallback(
     async (sessionId: string, cwd: string) => {
@@ -345,11 +370,13 @@ export default function App() {
       entry={s}
       isRenaming={renamingId === s.session_id}
       isSelected={selectedId === s.session_id}
-      onClick={() => handleCardClick(s)}
+      isFlashing={flashingId === s.session_id}
+      onClick={() => handleCardSingleClick(s)}
       onContextMenu={(ev) => openMenu(s, ev)}
-      onDoubleClick={() => handleCardClick(s)}
+      onDoubleClick={() => handleCardSingleClick(s)}
       onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
       onCancelRename={handleCancelRename}
+      onClose={() => handleDelete(s.session_id)}
     />
   )
 
@@ -380,6 +407,13 @@ export default function App() {
               {t('app.arrangeButton')}
             </button>
           )}
+          <button
+            className="toolbar-btn toolbar-btn--theme"
+            onClick={handleToggleTheme}
+            title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           <button
             className="toolbar-btn toolbar-btn--lang"
             onClick={handleToggleLang}
@@ -427,13 +461,15 @@ export default function App() {
                           entry={s}
                           isRenaming={renamingId === s.session_id}
                           isSelected={selectedId === s.session_id}
-                          onClick={() => handleCardClick(s)}
+                          isFlashing={flashingId === s.session_id}
+                          onClick={() => handleCardSingleClick(s)}
                           onContextMenu={(ev) => openMenu(s, ev)}
-                          onDoubleClick={() => handleCardClick(s)}
+                          onDoubleClick={() => handleCardSingleClick(s)}
                           onCommitRename={(alias) =>
                             handleCommitRename(s.session_id, alias)
                           }
                           onCancelRename={handleCancelRename}
+                          onClose={() => handleDismiss(s.session_id)}
                         />
                       ))}
                     </section>

@@ -94,12 +94,16 @@ fn is_blank(id: &str) -> bool {
 
 // ── jump ────────────────────────────────────────────────────────────
 
-pub fn jump_to(iterm_session_id: &str) -> Result<()> {
+pub fn jump_to(iterm_session_id: &str, pulse: bool) -> Result<()> {
     if is_blank(iterm_session_id) {
         return Err(anyhow!("no iTerm session id recorded"));
     }
     let sid = normalize(iterm_session_id).replace('"', "\\\"");
-    let script = format!(
+
+    // Step 1: select the target session (no visual animation).
+    // The z-order change (A going behind B) happens here while the user
+    // is still looking at AgentManager — they won't see A "flash".
+    let select_script = format!(
         r#"
 tell application "iTerm"
   repeat with w in windows
@@ -109,16 +113,6 @@ tell application "iTerm"
           select w
           tell t to select
           tell s to select
-          -- Visual pulse: briefly expand the window then restore,
-          -- so the user can immediately spot which window was focused
-          -- when multiple windows are tiled side by side.
-          try
-            set origBounds to bounds of w
-            set {{x1, y1, x2, y2}} to origBounds
-            set bounds of w to {{x1 - 25, y1 - 25, x2 + 25, y2 + 25}}
-            delay 0.15
-            set bounds of w to origBounds
-          end try
           return "ok"
         end if
       end repeat
@@ -129,13 +123,39 @@ end tell
 "#,
         sid = sid
     );
-    let out = run_osascript(&script)?;
+    let out = run_osascript(&select_script)?;
     if out.trim() == "not-found" {
         return Err(anyhow!(
             "iTerm session {iterm_session_id} not found (maybe closed?)"
         ));
     }
+
+    // Step 2: bring iTerm to foreground. B is already the current window.
     let _ = Command::new("open").args(["-a", "iTerm"]).status();
+
+    // Step 3: pulse AFTER the user sees iTerm with B frontmost.
+    if pulse {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let _ = run_osascript(
+            r#"
+tell application "iTerm"
+  try
+    set w to current window
+    set origBounds to bounds of w
+    set {x1, y1, x2, y2} to origBounds
+    set bounds of w to {x1 - 30, y1 - 30, x2 + 30, y2 + 30}
+    delay 0.15
+    set bounds of w to origBounds
+    delay 0.1
+    set bounds of w to {x1 - 30, y1 - 30, x2 + 30, y2 + 30}
+    delay 0.15
+    set bounds of w to origBounds
+  end try
+end tell
+"#,
+        );
+    }
+
     Ok(())
 }
 
