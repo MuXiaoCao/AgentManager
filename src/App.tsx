@@ -169,13 +169,39 @@ export default function App() {
   )
 
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
 
-  const handleDragStart = useCallback((idx: number) => {
-    setDragIndex(idx)
+  const handleDragStart = useCallback(
+    (ev: React.DragEvent, idx: number) => {
+      ev.dataTransfer.setData('text/plain', String(idx))
+      ev.dataTransfer.effectAllowed = 'move'
+      setDragIndex(idx)
+    },
+    []
+  )
+
+  const handleDragOver = useCallback(
+    (ev: React.DragEvent, idx: number) => {
+      ev.preventDefault()
+      ev.dataTransfer.dropEffect = 'move'
+      setDropTargetIndex(idx)
+    },
+    []
+  )
+
+  const handleDragLeave = useCallback(() => {
+    setDropTargetIndex(null)
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    setDragIndex(null)
+    setDropTargetIndex(null)
   }, [])
 
   const handleDrop = useCallback(
-    async (dropIdx: number) => {
+    async (ev: React.DragEvent, dropIdx: number) => {
+      ev.preventDefault()
+      setDropTargetIndex(null)
       if (dragIndex === null || dragIndex === dropIdx) return
       const newList = [...activeSessions]
       const [moved] = newList.splice(dragIndex, 1)
@@ -323,26 +349,29 @@ export default function App() {
       isRenaming={renamingId === s.session_id}
       isSelected={selectedId === s.session_id}
       draggable={index !== undefined}
-      isDragOver={false}
+      isDragOver={index !== undefined && dropTargetIndex === index && dragIndex !== index}
       onClick={() => handleCardClick(s)}
       onContextMenu={(ev) => openMenu(s, ev)}
       onDoubleClick={() => handleCardClick(s)}
       onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
       onCancelRename={handleCancelRename}
-      onDragStart={index !== undefined ? () => handleDragStart(index) : undefined}
+      onDragStart={
+        index !== undefined
+          ? (ev: React.DragEvent) => handleDragStart(ev, index)
+          : undefined
+      }
       onDragOver={
         index !== undefined
-          ? (ev: React.DragEvent) => ev.preventDefault()
+          ? (ev: React.DragEvent) => handleDragOver(ev, index)
           : undefined
       }
+      onDragLeave={index !== undefined ? handleDragLeave : undefined}
       onDrop={
         index !== undefined
-          ? (ev: React.DragEvent) => {
-              ev.preventDefault()
-              handleDrop(index)
-            }
+          ? (ev: React.DragEvent) => handleDrop(ev, index)
           : undefined
       }
+      onDragEnd={index !== undefined ? handleDragEnd : undefined}
     />
   )
 
