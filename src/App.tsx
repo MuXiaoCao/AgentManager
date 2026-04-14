@@ -170,12 +170,14 @@ export default function App() {
 
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
+  const isDraggingRef = useRef(false)
 
   const handleDragStart = useCallback(
     (ev: React.DragEvent, idx: number) => {
       ev.dataTransfer.setData('text/plain', String(idx))
       ev.dataTransfer.effectAllowed = 'move'
       setDragIndex(idx)
+      isDraggingRef.current = true
     },
     []
   )
@@ -196,6 +198,11 @@ export default function App() {
   const handleDragEnd = useCallback(() => {
     setDragIndex(null)
     setDropTargetIndex(null)
+    // Keep isDraggingRef true briefly to suppress the click event
+    // that WebKit fires after drop.
+    setTimeout(() => {
+      isDraggingRef.current = false
+    }, 200)
   }, [])
 
   const handleDrop = useCallback(
@@ -317,6 +324,8 @@ export default function App() {
 
   const handleCardClick = useCallback(
     (entry: SessionEntry) => {
+      // Suppress click that fires after a drag-and-drop release.
+      if (isDraggingRef.current) return
       if (entry.last_event === 'sessionend') {
         handleReopen(entry.session_id)
       } else {
