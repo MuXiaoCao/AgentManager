@@ -109,6 +109,16 @@ tell application "iTerm"
           select w
           tell t to select
           tell s to select
+          -- Visual pulse: briefly expand the window then restore,
+          -- so the user can immediately spot which window was focused
+          -- when multiple windows are tiled side by side.
+          try
+            set origBounds to bounds of w
+            set {{x1, y1, x2, y2}} to origBounds
+            set bounds of w to {{x1 - 25, y1 - 25, x2 + 25, y2 + 25}}
+            delay 0.15
+            set bounds of w to origBounds
+          end try
           return "ok"
         end if
       end repeat
