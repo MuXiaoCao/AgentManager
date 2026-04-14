@@ -165,65 +165,6 @@ pub struct TileRegion {
 /// (Accessibility API). Unlike `tell application "iTerm"`, System Events
 /// does NOT trigger the Dock's "switch to app's Space" behavior, so windows
 /// stay on the user's current desktop.
-/// Check if this process has Accessibility permission. If not, trigger
-/// the macOS system dialog that asks the user to grant it.
-#[cfg(target_os = "macos")]
-fn ensure_accessibility() -> bool {
-    use std::ffi::c_void;
-    use std::ptr;
-
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
-    }
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFDictionaryCreate(
-            allocator: *const c_void,
-            keys: *const *const c_void,
-            values: *const *const c_void,
-            count: isize,
-            key_callbacks: *const c_void,
-            value_callbacks: *const c_void,
-        ) -> *const c_void;
-        static kCFTypeDictionaryKeyCallBacks: c_void;
-        static kCFTypeDictionaryValueCallBacks: c_void;
-        static kCFBooleanTrue: *const c_void;
-        fn CFRelease(cf: *const c_void);
-    }
-
-    // The key string "AXTrustedCheckOptionPrompt" as CFString.
-    let key_str = b"AXTrustedCheckOptionPrompt\0";
-    let key_cf: *const c_void;
-    unsafe {
-        extern "C" {
-            fn CFStringCreateWithCString(
-                alloc: *const c_void,
-                cstr: *const u8,
-                encoding: u32,
-            ) -> *const c_void;
-        }
-        key_cf = CFStringCreateWithCString(ptr::null(), key_str.as_ptr(), 0x08000100); // UTF-8
-    }
-
-    unsafe {
-        let keys = [key_cf];
-        let values = [kCFBooleanTrue];
-        let dict = CFDictionaryCreate(
-            ptr::null(),
-            keys.as_ptr(),
-            values.as_ptr(),
-            1,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks,
-        );
-        let result = AXIsProcessTrustedWithOptions(dict);
-        CFRelease(dict);
-        CFRelease(key_cf);
-        result
-    }
-}
-
 fn apply_bounds_via_system_events(region: &TileRegion) -> Result<(usize, usize)> {
     // First, count iTerm windows via a tiny System Events query.
     let count_script = r#"
@@ -277,15 +218,6 @@ end tell
 /// (`tell application "iTerm"` causes the desktop to jump to iTerm's "home"
 /// Space even when both apps are on the same desktop).
 pub fn arrange_windows(region: TileRegion) -> Result<ArrangeReport> {
-    if !ensure_accessibility() {
-        return Err(anyhow!(
-            "AgentManager needs Accessibility permission. \
-             macOS should have shown a dialog — please grant it in \
-             System Settings → Privacy & Security → Accessibility, \
-             then try again."
-        ));
-    }
-
     let (arranged, skipped) = apply_bounds_via_system_events(&region)?;
 
     // Compute cols/rows for the report (mirror the AppleScript logic).

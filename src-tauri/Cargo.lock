@@ -15,7 +15,6 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "core-foundation",
  "dashmap",
  "dirs 5.0.1",
  "env_logger",
