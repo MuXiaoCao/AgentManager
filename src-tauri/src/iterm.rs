@@ -246,6 +246,52 @@ fn ensure_accessibility() -> bool {
     }
 }
 
+/// Reorder iTerm's window z-order to match card order. Selects each window
+/// in REVERSE order so the first card's window ends up frontmost (= System
+/// Events window 1). Uses `run_applescript_inline` (NSAppleScript) to stay
+/// in-process.
+fn reorder_iterm_windows(iterm_session_ids: &[String]) {
+    if iterm_session_ids.is_empty() {
+        return;
+    }
+    // Build list of normalized session IDs in reverse order.
+    let reversed: Vec<String> = iterm_session_ids
+        .iter()
+        .rev()
+        .filter(|s| !is_blank(s))
+        .map(|s| normalize(s).replace('"', "\\\""))
+        .collect();
+    if reversed.is_empty() {
+        return;
+    }
+
+    // For each session ID (reversed), find its window and select it.
+    // After this loop, the LAST selected window (= first card) is frontmost.
+    let mut script = String::new();
+    script.push_str("tell application \"iTerm\"\n");
+    for sid in &reversed {
+        script.push_str(&format!(
+            r#"  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        if unique id of s is "{sid}" then
+          select w
+          exit repeat
+        end if
+      end repeat
+    end repeat
+  end repeat
+"#,
+            sid = sid
+        ));
+    }
+    script.push_str("end tell\nreturn \"ok\"\n");
+
+    if let Err(err) = run_osascript(&script) {
+        log::warn!("reorder_iterm_windows failed: {err}");
+    }
+}
+
 fn apply_bounds_via_system_events(region: &TileRegion) -> Result<(usize, usize)> {
     // First, count iTerm windows via a tiny System Events query.
     let count_script = r#"
@@ -298,11 +344,20 @@ end tell
 /// own AppleScript to avoid triggering macOS's Dock-based Space switching
 /// (`tell application "iTerm"` causes the desktop to jump to iTerm's "home"
 /// Space even when both apps are on the same desktop).
-pub fn arrange_windows(region: TileRegion) -> Result<ArrangeReport> {
+pub fn arrange_windows(region: TileRegion, ordered_iterm_ids: &[String]) -> Result<ArrangeReport> {
     if !ensure_accessibility() {
         return Err(anyhow!(
             "需要辅助功能权限。请在 系统设置 → 隐私与安全性 → 辅助功能 中授权 AgentManager，然后重试。"
         ));
+    }
+
+    // If we have card-ordered session IDs, reorder iTerm's windows to match.
+    // We `select` each window in REVERSE card order via iTerm AppleScript so
+    // the first card's window ends up as window 1 (frontmost) in System Events.
+    if !ordered_iterm_ids.is_empty() {
+        reorder_iterm_windows(ordered_iterm_ids);
+        // Brief pause so iTerm finishes reordering before System Events reads z-order.
+        std::thread::sleep(std::time::Duration::from_millis(200));
     }
 
     let (arranged, skipped) = apply_bounds_via_system_events(&region)?;

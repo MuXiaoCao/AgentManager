@@ -6,11 +6,16 @@ interface Props {
   entry: SessionEntry
   isRenaming: boolean
   isSelected: boolean
+  draggable?: boolean
+  isDragOver?: boolean
   onClick: () => void
   onContextMenu: (ev: React.MouseEvent) => void
   onDoubleClick: () => void
   onCommitRename: (newAlias: string | null) => void
   onCancelRename: () => void
+  onDragStart?: () => void
+  onDragOver?: (ev: React.DragEvent) => void
+  onDrop?: (ev: React.DragEvent) => void
 }
 
 type Tone = 'active' | 'idle' | 'done'
@@ -74,11 +79,15 @@ export function SessionCard({
   entry,
   isRenaming,
   isSelected,
+  draggable,
   onClick,
   onContextMenu,
   onDoubleClick,
   onCommitRename,
   onCancelRename,
+  onDragStart,
+  onDragOver,
+  onDrop,
 }: Props) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState('')
@@ -124,9 +133,13 @@ export function SessionCard({
   return (
     <article
       className={className}
+      draggable={draggable}
       onClick={onClick}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       title={t('card.tooltip')}
     >
       <div className="card__top">

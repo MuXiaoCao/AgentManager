@@ -168,6 +168,26 @@ export default function App() {
     [refreshSessions]
   )
 
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+  const handleDragStart = useCallback((idx: number) => {
+    setDragIndex(idx)
+  }, [])
+
+  const handleDrop = useCallback(
+    async (dropIdx: number) => {
+      if (dragIndex === null || dragIndex === dropIdx) return
+      const newList = [...activeSessions]
+      const [moved] = newList.splice(dragIndex, 1)
+      newList.splice(dropIdx, 0, moved)
+      const order = newList.map((s) => s.session_id)
+      await invoke('reorder_sessions', { order })
+      refreshSessions()
+      setDragIndex(null)
+    },
+    [dragIndex, activeSessions, refreshSessions]
+  )
+
   const handleClearHistory = useCallback(async () => {
     await invoke('clear_history')
     refreshSessions()
@@ -296,17 +316,33 @@ export default function App() {
 
   // ─── render ───────────────────────────────────────────────────────
 
-  const renderCard = (s: SessionEntry) => (
+  const renderCard = (s: SessionEntry, index?: number) => (
     <SessionCard
       key={s.session_id}
       entry={s}
       isRenaming={renamingId === s.session_id}
       isSelected={selectedId === s.session_id}
+      draggable={index !== undefined}
+      isDragOver={false}
       onClick={() => handleCardClick(s)}
       onContextMenu={(ev) => openMenu(s, ev)}
       onDoubleClick={() => handleCardClick(s)}
       onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
       onCancelRename={handleCancelRename}
+      onDragStart={index !== undefined ? () => handleDragStart(index) : undefined}
+      onDragOver={
+        index !== undefined
+          ? (ev: React.DragEvent) => ev.preventDefault()
+          : undefined
+      }
+      onDrop={
+        index !== undefined
+          ? (ev: React.DragEvent) => {
+              ev.preventDefault()
+              handleDrop(index)
+            }
+          : undefined
+      }
     />
   )
 
@@ -368,7 +404,9 @@ export default function App() {
           ) : (
             <>
               {activeSessions.length > 0 && (
-                <section>{activeSessions.map(renderCard)}</section>
+                <section>
+                  {activeSessions.map((s, i) => renderCard(s, i))}
+                </section>
               )}
               {historySessions.length > 0 && (
                 <section>

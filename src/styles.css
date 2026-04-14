@@ -183,6 +183,15 @@ body,
   transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
 
+.card[draggable="true"] {
+  cursor: grab;
+}
+
+.card[draggable="true"]:active {
+  cursor: grabbing;
+  opacity: 0.6;
+}
+
 .card:hover {
   background: var(--bg-elev-2);
   border-color: #333848;

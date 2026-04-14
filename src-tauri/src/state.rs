@@ -39,6 +39,7 @@ impl AppState {
     }
 
     pub fn list_sessions(&self) -> Vec<SessionEntry> {
+        let order = self.load_order();
         let mut out: Vec<SessionEntry> = self
             .sessions
             .iter()
@@ -50,9 +51,42 @@ impl AppState {
                 entry
             })
             .collect();
-        // Newest first
-        out.sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
+        // Sort: explicitly ordered sessions first (preserving drag order),
+        // then unordered ones by last_updated descending.
+        out.sort_by(|a, b| {
+            let ai = order.iter().position(|id| id == &a.session_id);
+            let bi = order.iter().position(|id| id == &b.session_id);
+            match (ai, bi) {
+                (Some(x), Some(y)) => x.cmp(&y),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => b.last_updated.cmp(&a.last_updated),
+            }
+        });
         out
+    }
+
+    pub fn reorder_sessions(&self, order: &[String]) {
+        if let Some(path) = Self::order_path() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&path, serde_json::to_string(order).unwrap_or_default());
+        }
+    }
+
+    fn order_path() -> Option<std::path::PathBuf> {
+        let mut p = dirs::config_dir()?;
+        p.push("agent-manager");
+        p.push("order.json");
+        Some(p)
+    }
+
+    fn load_order(&self) -> Vec<String> {
+        Self::order_path()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
     }
 
     pub fn upsert_from_notify(&self, payload: NotifyPayload) -> SessionEntry {

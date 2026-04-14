@@ -53,6 +53,12 @@ pub fn reopen_session(
         .map_err(|e| e.to_string())
 }
 
+/// Persist user's custom card order (from drag-and-drop reordering).
+#[command]
+pub fn reorder_sessions(state: State<'_, AppState>, order: Vec<String>) {
+    state.reorder_sessions(&order);
+}
+
 /// Clear the notification badge on a card (mark all as handled).
 #[command]
 pub fn clear_notifications(state: State<'_, AppState>, session_id: String) {
@@ -84,15 +90,26 @@ pub fn jump_to_iterm(
     iterm::jump_to(&entry.iterm_session_id).map_err(|e| e.to_string())
 }
 
-/// Arrange ALL iTerm windows into a grid on the primary monitor, excluding
-/// the main-window strip on the left. Uses System Events (not iTerm
-/// AppleScript) to avoid macOS Space switching.
+/// Arrange iTerm windows into a grid. If `iterm_session_ids` is provided
+/// (from the frontend's card order), windows are reordered to match before
+/// tiling. Otherwise all iTerm windows are tiled in their current z-order.
 #[command]
 pub fn arrange_iterm_windows(
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<ArrangeReport, String> {
     let region = compute_region(&app).map_err(|e| e.to_string())?;
-    iterm::arrange_windows(region).map_err(|e| e.to_string())
+
+    // Get active sessions in card order → their iterm_session_ids.
+    let sessions = state.list_sessions();
+    let ordered_iterm_ids: Vec<String> = sessions
+        .iter()
+        .filter(|s| s.last_event != "sessionend")
+        .filter(|s| !s.iterm_session_id.is_empty() && s.iterm_session_id != "unknown")
+        .map(|s| s.iterm_session_id.clone())
+        .collect();
+
+    iterm::arrange_windows(region, &ordered_iterm_ids).map_err(|e| e.to_string())
 }
 
 fn compute_region(app: &tauri::AppHandle) -> anyhow::Result<TileRegion> {
