@@ -133,13 +133,18 @@ export default function App() {
 
   const handleCancelRename = useCallback(() => setRenamingId(null), [])
 
+  const jumpingRef = useRef(false)
   const handleJump = useCallback(
     async (sessionId: string) => {
+      if (jumpingRef.current) return // prevent concurrent jumps (double-click race)
+      jumpingRef.current = true
       setSelectedId(sessionId)
       try {
         await invoke('jump_to_iterm', { sessionId })
       } catch (err) {
         showToast(t('toast.jumpFailed', { err: String(err) }))
+      } finally {
+        jumpingRef.current = false
       }
     },
     [showToast, t]
