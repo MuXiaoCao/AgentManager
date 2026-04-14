@@ -6,18 +6,11 @@ interface Props {
   entry: SessionEntry
   isRenaming: boolean
   isSelected: boolean
-  draggable?: boolean
-  isDragOver?: boolean
   onClick: () => void
   onContextMenu: (ev: React.MouseEvent) => void
   onDoubleClick: () => void
   onCommitRename: (newAlias: string | null) => void
   onCancelRename: () => void
-  onDragStart?: (ev: React.DragEvent) => void
-  onDragOver?: (ev: React.DragEvent) => void
-  onDragLeave?: () => void
-  onDrop?: (ev: React.DragEvent) => void
-  onDragEnd?: () => void
 }
 
 type Tone = 'active' | 'idle' | 'done'
@@ -81,18 +74,11 @@ export function SessionCard({
   entry,
   isRenaming,
   isSelected,
-  draggable,
-  isDragOver,
   onClick,
   onContextMenu,
   onDoubleClick,
   onCommitRename,
   onCancelRename,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
 }: Props) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState('')
@@ -131,7 +117,6 @@ export function SessionCard({
     'card',
     `card--${tone}`,
     isSelected ? 'card--selected' : '',
-    isDragOver ? 'card--drop-target' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -139,15 +124,9 @@ export function SessionCard({
   return (
     <article
       className={className}
-      draggable={draggable}
       onClick={onClick}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
       title={t('card.tooltip')}
     >
       <div className="card__top">

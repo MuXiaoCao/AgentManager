@@ -2,7 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useTranslation, Trans } from 'react-i18next'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
 import { SessionCard } from './components/SessionCard'
+import { SortableCard } from './components/SortableCard'
 import { ContextMenu, type MenuItem } from './components/ContextMenu'
 import { SetupBanner } from './components/SetupBanner'
 import { ClaudeHistoryList } from './components/ClaudeHistoryList'
@@ -168,57 +182,28 @@ export default function App() {
     [refreshSessions]
   )
 
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
-  const isDraggingRef = useRef(false)
+  // ─── dnd-kit sortable ──────────────────────────────────────────
 
-  const handleDragStart = useCallback(
-    (ev: React.DragEvent, idx: number) => {
-      ev.dataTransfer.setData('text/plain', String(idx))
-      ev.dataTransfer.effectAllowed = 'move'
-      setDragIndex(idx)
-      isDraggingRef.current = true
-    },
-    []
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      // 8px distance before drag starts, so clicks still work for jump.
+      activationConstraint: { distance: 8 },
+    })
   )
 
-  const handleDragOver = useCallback(
-    (ev: React.DragEvent, idx: number) => {
-      ev.preventDefault()
-      ev.dataTransfer.dropEffect = 'move'
-      setDropTargetIndex(idx)
-    },
-    []
-  )
-
-  const handleDragLeave = useCallback(() => {
-    setDropTargetIndex(null)
-  }, [])
-
-  const handleDragEnd = useCallback(() => {
-    setDragIndex(null)
-    setDropTargetIndex(null)
-    // Keep isDraggingRef true briefly to suppress the click event
-    // that WebKit fires after drop.
-    setTimeout(() => {
-      isDraggingRef.current = false
-    }, 200)
-  }, [])
-
-  const handleDrop = useCallback(
-    async (ev: React.DragEvent, dropIdx: number) => {
-      ev.preventDefault()
-      setDropTargetIndex(null)
-      if (dragIndex === null || dragIndex === dropIdx) return
-      const newList = [...activeSessions]
-      const [moved] = newList.splice(dragIndex, 1)
-      newList.splice(dropIdx, 0, moved)
-      const order = newList.map((s) => s.session_id)
+  const handleSortEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const oldIdx = activeSessions.findIndex((s) => s.session_id === active.id)
+      const newIdx = activeSessions.findIndex((s) => s.session_id === over.id)
+      if (oldIdx === -1 || newIdx === -1) return
+      const reordered = arrayMove(activeSessions, oldIdx, newIdx)
+      const order = reordered.map((s) => s.session_id)
       await invoke('reorder_sessions', { order })
       refreshSessions()
-      setDragIndex(null)
     },
-    [dragIndex, activeSessions, refreshSessions]
+    [activeSessions, refreshSessions]
   )
 
   const handleClearHistory = useCallback(async () => {
@@ -324,8 +309,6 @@ export default function App() {
 
   const handleCardClick = useCallback(
     (entry: SessionEntry) => {
-      // Suppress click that fires after a drag-and-drop release.
-      if (isDraggingRef.current) return
       if (entry.last_event === 'sessionend') {
         handleReopen(entry.session_id)
       } else {
@@ -351,36 +334,17 @@ export default function App() {
 
   // ─── render ───────────────────────────────────────────────────────
 
-  const renderCard = (s: SessionEntry, index?: number) => (
+  const renderHistoryCard = (s: SessionEntry) => (
     <SessionCard
       key={s.session_id}
       entry={s}
       isRenaming={renamingId === s.session_id}
       isSelected={selectedId === s.session_id}
-      draggable={index !== undefined}
-      isDragOver={index !== undefined && dropTargetIndex === index && dragIndex !== index}
       onClick={() => handleCardClick(s)}
       onContextMenu={(ev) => openMenu(s, ev)}
       onDoubleClick={() => handleCardClick(s)}
       onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
       onCancelRename={handleCancelRename}
-      onDragStart={
-        index !== undefined
-          ? (ev: React.DragEvent) => handleDragStart(ev, index)
-          : undefined
-      }
-      onDragOver={
-        index !== undefined
-          ? (ev: React.DragEvent) => handleDragOver(ev, index)
-          : undefined
-      }
-      onDragLeave={index !== undefined ? handleDragLeave : undefined}
-      onDrop={
-        index !== undefined
-          ? (ev: React.DragEvent) => handleDrop(ev, index)
-          : undefined
-      }
-      onDragEnd={index !== undefined ? handleDragEnd : undefined}
     />
   )
 
@@ -442,9 +406,34 @@ export default function App() {
           ) : (
             <>
               {activeSessions.length > 0 && (
-                <section>
-                  {activeSessions.map((s, i) => renderCard(s, i))}
-                </section>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleSortEnd}
+                >
+                  <SortableContext
+                    items={activeSessions.map((s) => s.session_id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <section>
+                      {activeSessions.map((s) => (
+                        <SortableCard
+                          key={s.session_id}
+                          entry={s}
+                          isRenaming={renamingId === s.session_id}
+                          isSelected={selectedId === s.session_id}
+                          onClick={() => handleCardClick(s)}
+                          onContextMenu={(ev) => openMenu(s, ev)}
+                          onDoubleClick={() => handleCardClick(s)}
+                          onCommitRename={(alias) =>
+                            handleCommitRename(s.session_id, alias)
+                          }
+                          onCancelRename={handleCancelRename}
+                        />
+                      ))}
+                    </section>
+                  </SortableContext>
+                </DndContext>
               )}
               {historySessions.length > 0 && (
                 <section>
@@ -457,7 +446,7 @@ export default function App() {
                       {t('history.clearAll')}
                     </button>
                   </div>
-                  {historySessions.map(renderCard)}
+                  {historySessions.map(renderHistoryCard)}
                 </section>
               )}
             </>
