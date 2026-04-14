@@ -165,6 +165,77 @@ pub struct TileRegion {
 /// (Accessibility API). Unlike `tell application "iTerm"`, System Events
 /// does NOT trigger the Dock's "switch to app's Space" behavior, so windows
 /// stay on the user's current desktop.
+/// Check Accessibility permission with caching. The prompt dialog is shown
+/// at most ONCE per app session. After the user grants access, subsequent
+/// calls return true immediately without any dialog.
+#[cfg(target_os = "macos")]
+fn ensure_accessibility() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::ffi::c_void;
+    use std::ptr;
+
+    static GRANTED: AtomicBool = AtomicBool::new(false);
+    static PROMPTED: AtomicBool = AtomicBool::new(false);
+
+    // Fast path: already confirmed.
+    if GRANTED.load(Ordering::Relaxed) {
+        return true;
+    }
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFDictionaryCreate(
+            alloc: *const c_void, keys: *const *const c_void,
+            values: *const *const c_void, count: isize,
+            kcb: *const c_void, vcb: *const c_void,
+        ) -> *const c_void;
+        static kCFTypeDictionaryKeyCallBacks: c_void;
+        static kCFTypeDictionaryValueCallBacks: c_void;
+        static kCFBooleanTrue: *const c_void;
+        static kCFBooleanFalse: *const c_void;
+        fn CFStringCreateWithCString(
+            alloc: *const c_void, cstr: *const u8, enc: u32,
+        ) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    unsafe {
+        // Quick check without prompt first.
+        if AXIsProcessTrusted() {
+            GRANTED.store(true, Ordering::Relaxed);
+            return true;
+        }
+
+        // Show the prompt dialog only once per app session.
+        if PROMPTED.swap(true, Ordering::Relaxed) {
+            return false; // already prompted, don't nag
+        }
+
+        let key = CFStringCreateWithCString(
+            ptr::null(), b"AXTrustedCheckOptionPrompt\0".as_ptr(), 0x08000100,
+        );
+        let keys = [key];
+        let values = [kCFBooleanTrue];
+        let dict = CFDictionaryCreate(
+            ptr::null(), keys.as_ptr(), values.as_ptr(), 1,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks,
+        );
+        let result = AXIsProcessTrustedWithOptions(dict);
+        CFRelease(dict);
+        CFRelease(key);
+
+        if result {
+            GRANTED.store(true, Ordering::Relaxed);
+        }
+        result
+    }
+}
+
 fn apply_bounds_via_system_events(region: &TileRegion) -> Result<(usize, usize)> {
     // First, count iTerm windows via a tiny System Events query.
     let count_script = r#"
@@ -218,6 +289,12 @@ end tell
 /// (`tell application "iTerm"` causes the desktop to jump to iTerm's "home"
 /// Space even when both apps are on the same desktop).
 pub fn arrange_windows(region: TileRegion) -> Result<ArrangeReport> {
+    if !ensure_accessibility() {
+        return Err(anyhow!(
+            "需要辅助功能权限。请在 系统设置 → 隐私与安全性 → 辅助功能 中授权 AgentManager，然后重试。"
+        ));
+    }
+
     let (arranged, skipped) = apply_bounds_via_system_events(&region)?;
 
     // Compute cols/rows for the report (mirror the AppleScript logic).
