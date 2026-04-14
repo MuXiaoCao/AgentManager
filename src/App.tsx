@@ -168,6 +168,12 @@ export default function App() {
     [refreshSessions]
   )
 
+  const handleClearHistory = useCallback(async () => {
+    await invoke('clear_history')
+    refreshSessions()
+    showToast(t('toast.historyCleared'))
+  }, [refreshSessions, showToast, t])
+
   const handleArrangeAll = useCallback(async () => {
     try {
       const report = await invoke<ArrangeReport>('arrange_iterm_windows')
@@ -366,7 +372,15 @@ export default function App() {
               )}
               {historySessions.length > 0 && (
                 <section>
-                  <h2 className="section-title">{t('history.title')}</h2>
+                  <div className="section-header">
+                    <h2 className="section-title">{t('history.title')}</h2>
+                    <button
+                      className="toolbar-btn toolbar-btn--sm toolbar-btn--danger"
+                      onClick={handleClearHistory}
+                    >
+                      {t('history.clearAll')}
+                    </button>
+                  </div>
                   {historySessions.map(renderCard)}
                 </section>
               )}

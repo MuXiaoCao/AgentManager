@@ -23,6 +23,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_sessions,
             commands::dismiss_session,
+            commands::clear_history,
             commands::delete_session,
             commands::clear_notifications,
             commands::rename_session,

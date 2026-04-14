@@ -51,7 +51,8 @@
     "renamePrompt": "Rename session"
   },
   "history": {
-    "title": "History"
+    "title": "History",
+    "clearAll": "Clear all"
   },
   "banner": {
     "notInstalled": "Claude hook not fully installed.",
@@ -67,7 +68,8 @@
     "arranged": "Arranged {{count}} iTerm window(s) into {{cols}}×{{rows}}",
     "arrangedWithSkipped": "Arranged {{count}} window(s) into {{cols}}×{{rows}}, {{skipped}} skipped",
     "reopened": "Reopening session in a new iTerm window…",
-    "reopenFailed": "Reopen failed: {{err}}"
+    "reopenFailed": "Reopen failed: {{err}}",
+    "historyCleared": "History cleared"
   },
   "language": {
     "toggleToZh": "切换到中文",

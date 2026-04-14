@@ -124,6 +124,29 @@ body,
   gap: 8px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 6px 0;
+}
+
+.toolbar-btn--sm {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.toolbar-btn--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.toolbar-btn--danger:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
 .section-title {
   font-size: 11px;
   text-transform: uppercase;

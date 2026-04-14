@@ -131,6 +131,24 @@ impl AppState {
         removed
     }
 
+    /// Clear all ended sessions from history, keeping active ones.
+    pub fn clear_history(&self) {
+        let ended: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|r| r.value().last_event == "sessionend")
+            .map(|r| r.key().clone())
+            .collect();
+        for sid in &ended {
+            self.sessions.remove(sid);
+            self.aliases.remove(sid);
+        }
+        if !ended.is_empty() {
+            let _ = self.save_sessions();
+            let _ = self.save_aliases();
+        }
+    }
+
     /// Permanently delete a session from history (persisted).
     pub fn delete_session(&self, session_id: &str) -> bool {
         let removed = self.sessions.remove(session_id).is_some();

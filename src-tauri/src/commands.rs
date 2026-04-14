@@ -15,6 +15,12 @@ pub fn dismiss_session(state: State<'_, AppState>, session_id: String) -> bool {
     state.dismiss(&session_id)
 }
 
+/// Clear all ended sessions from history.
+#[command]
+pub fn clear_history(state: State<'_, AppState>) {
+    state.clear_history();
+}
+
 /// Permanently remove a session from history (disk + memory).
 #[command]
 pub fn delete_session(state: State<'_, AppState>, session_id: String) -> bool {

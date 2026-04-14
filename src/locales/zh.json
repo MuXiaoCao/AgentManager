@@ -50,7 +50,8 @@
     "renamePrompt": "重命名会话"
   },
   "history": {
-    "title": "历史会话"
+    "title": "历史会话",
+    "clearAll": "清空全部"
   },
   "banner": {
     "notInstalled": "Claude hook 未完全安装。",
@@ -66,7 +67,8 @@
     "arranged": "已将 {{count}} 个 iTerm 窗口排列为 {{cols}}×{{rows}}",
     "arrangedWithSkipped": "已排列 {{count}} 个窗口为 {{cols}}×{{rows}}，跳过 {{skipped}} 个",
     "reopened": "正在新 iTerm 窗口中恢复会话…",
-    "reopenFailed": "重新打开失败：{{err}}"
+    "reopenFailed": "重新打开失败：{{err}}",
+    "historyCleared": "历史会话已清空"
   },
   "language": {
     "toggleToZh": "切换到中文",
