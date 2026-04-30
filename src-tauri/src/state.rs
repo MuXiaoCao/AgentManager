@@ -15,6 +15,9 @@ pub struct SessionEntry {
     pub notification_count: u32,
     /// User-assigned alias (persisted separately); overrides display title when present.
     pub alias: Option<String>,
+    /// Preview of recent activity (last assistant message or user prompt).
+    #[serde(default)]
+    pub preview: String,
 }
 
 #[derive(Clone)]
@@ -126,6 +129,9 @@ impl AppState {
             }
         }
 
+        // Try to get a preview from the session's JSONL file.
+        let preview = Self::read_session_preview(&payload.session_id, &payload.cwd);
+
         let entry = self
             .sessions
             .entry(payload.session_id.clone())
@@ -134,11 +140,12 @@ impl AppState {
                 e.iterm_session_id = payload.iterm_session_id.clone();
                 e.last_event = payload.event_type.clone();
                 e.last_updated = now;
+                if !preview.is_empty() {
+                    e.preview = preview.clone();
+                }
                 if payload.event_type == "notification" {
                     e.notification_count = e.notification_count.saturating_add(1);
                 } else {
-                    // Any non-notification event (stop, userpromptsubmit, etc.)
-                    // means the user has moved past the pending notifications.
                     e.notification_count = 0;
                 }
             })
@@ -151,6 +158,7 @@ impl AppState {
                 last_updated: now,
                 notification_count: if payload.event_type == "notification" { 1 } else { 0 },
                 alias: None,
+                preview: preview.clone(),
             })
             .clone();
         let _ = self.save_sessions();
@@ -245,6 +253,90 @@ impl AppState {
     }
 
     // ── session persistence ────────────────────────────────────────────
+
+    /// Read a preview of recent activity from the session's JSONL file.
+    /// Searches ALL project dirs for the session_id (because the project
+    /// directory encoding doesn't always match the session's cwd).
+    fn read_session_preview(session_id: &str, _cwd: &str) -> String {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let Some(home) = dirs::home_dir() else { return String::new() };
+        let projects_dir = home.join(".claude").join("projects");
+        let filename = format!("{}.jsonl", session_id);
+
+        // Search all project directories for this session's JSONL.
+        let jsonl_path = std::fs::read_dir(&projects_dir)
+            .ok()
+            .and_then(|entries| {
+                entries.flatten().find_map(|e| {
+                    let p = e.path().join(&filename);
+                    if p.exists() { Some(p) } else { None }
+                })
+            });
+
+        let Some(jsonl_path) = jsonl_path else {
+            return String::new();
+        };
+
+        let Ok(mut file) = std::fs::File::open(&jsonl_path) else {
+            return String::new();
+        };
+        let Ok(meta) = file.metadata() else {
+            return String::new();
+        };
+        let file_size = meta.len();
+
+        // Read the last 32KB.
+        let read_from = if file_size > 32768 {
+            file_size - 32768
+        } else {
+            0
+        };
+        let _ = file.seek(SeekFrom::Start(read_from));
+        let mut buf = String::new();
+        let _ = file.read_to_string(&mut buf);
+
+        // Find the last user or assistant message with text content.
+        let mut last_preview = String::new();
+        for line in buf.lines().rev() {
+            let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let msg_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if msg_type != "user" && msg_type != "assistant" {
+                continue;
+            }
+            // Extract text from message.content
+            let content = obj.pointer("/message/content");
+            let text = match content {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Array(arr)) => {
+                    arr.iter()
+                        .filter_map(|c| {
+                            if c.get("type")?.as_str()? == "text" {
+                                Some(c.get("text")?.as_str()?.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .next()
+                        .unwrap_or_default()
+                }
+                _ => continue,
+            };
+            let trimmed = text.trim();
+            if trimmed.len() > 5 {
+                let max_len = 200;
+                last_preview = if trimmed.len() > max_len {
+                    format!("{}…", &trimmed[..trimmed.floor_char_boundary(max_len)])
+                } else {
+                    trimmed.to_string()
+                };
+                break;
+            }
+        }
+        last_preview
+    }
 
     pub fn save_sessions_pub(&self) -> anyhow::Result<()> {
         self.save_sessions()

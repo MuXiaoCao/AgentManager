@@ -7,6 +7,7 @@ export interface SessionEntry {
   last_updated: string
   notification_count: number
   alias: string | null
+  preview: string
 }
 
 export interface HookStatus {

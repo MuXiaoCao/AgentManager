@@ -17,17 +17,6 @@ interface Props {
 
 type Tone = 'active' | 'idle' | 'done'
 
-// Five hook events map to three visual tones:
-//   active (green)  — Claude is doing something or session is alive
-//   idle   (yellow) — Claude needs user attention (Notification hook)
-//   done   (grey)   — session ended
-//
-// Text labels within each tone distinguish the actual state:
-//   sessionstart       → "Started"    (active)
-//   userpromptsubmit   → "Working"    (active — user just sent a prompt)
-//   stop               → "Idle"       (active — waiting for next prompt)
-//   notification       → "Needs input" (idle — Claude explicitly needs you)
-//   sessionend         → "Ended"      (done)
 function eventTone(event: string): Tone {
   switch (event) {
     case 'sessionstart':
@@ -67,8 +56,10 @@ function useRelativeTime(iso: string): string {
   const diff = Math.max(0, Math.round((now - then) / 1000))
   if (diff < 5) return t('card.time.justNow')
   if (diff < 60) return t('card.time.secondsAgo', { count: diff })
-  if (diff < 3600) return t('card.time.minutesAgo', { count: Math.floor(diff / 60) })
-  if (diff < 86400) return t('card.time.hoursAgo', { count: Math.floor(diff / 3600) })
+  if (diff < 3600)
+    return t('card.time.minutesAgo', { count: Math.floor(diff / 60) })
+  if (diff < 86400)
+    return t('card.time.hoursAgo', { count: Math.floor(diff / 3600) })
   return t('card.time.daysAgo', { count: Math.floor(diff / 86400) })
 }
 
@@ -126,6 +117,10 @@ export function SessionCard({
     .filter(Boolean)
     .join(' ')
 
+  const cwdShort = entry.cwd
+    .replace(/^\/Users\/[^/]+\//, '~/')
+    .replace(/^\/home\/[^/]+\//, '~/')
+
   return (
     <article
       className={className}
@@ -137,13 +132,18 @@ export function SessionCard({
       {onClose && (
         <button
           className="card__close"
-          onClick={(ev) => { ev.stopPropagation(); onClose(); }}
-          title={entry.last_event === 'sessionend' ? 'Delete' : 'Dismiss'}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            onClose()
+          }}
         >
           ×
         </button>
       )}
-      <div className="card__top">
+
+      {/* Row 1: agent badge + title + status */}
+      <div className="card__header">
+        <span className="card__agent-badge">{entry.agent}</span>
         {isRenaming ? (
           <input
             ref={inputRef}
@@ -167,20 +167,30 @@ export function SessionCard({
         ) : (
           <span className="card__title">{title}</span>
         )}
-        <span className={`card__status card__status--${tone}`}>{statusText}</span>
+        <span className={`card__status card__status--${tone}`}>
+          {statusText}
+        </span>
       </div>
+
+      {/* Row 3: cwd path */}
       <div className="card__cwd" title={entry.cwd}>
-        {entry.cwd}
+        {cwdShort}
       </div>
-      <div className="card__meta">
-        <span className="card__agent">{entry.agent}</span>
+
+      {/* Row 4: content preview (always shown for uniform card height) */}
+      <div className="card__preview">
+        {entry.preview || '\u00A0'}
+      </div>
+
+      {/* Row 5: footer with time + notifications */}
+      <div className="card__footer">
         <span className="card__time">{relTime}</span>
+        {entry.notification_count > 0 && (
+          <span className="card__badge">
+            {t('card.badge', { count: entry.notification_count })}
+          </span>
+        )}
       </div>
-      {entry.notification_count > 0 && (
-        <div className="card__badge">
-          {t('card.badge', { count: entry.notification_count })}
-        </div>
-      )}
     </article>
   )
 }
