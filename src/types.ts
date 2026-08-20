@@ -10,14 +10,35 @@ export interface SessionEntry {
   preview: string
 }
 
-export interface HookStatus {
+export type AgentName = 'claude' | 'codex'
+
+export interface AgentHookStatus {
+  agent: AgentName
   script_installed: boolean
   settings_exists: boolean
   installed_events: string[]
   expected_command: string
+  hooks_enabled: boolean
+}
+
+export interface HookStatus {
+  claude: AgentHookStatus
+  codex: AgentHookStatus
+}
+
+export interface HttpServerStatus {
+  healthy: boolean
+  retry_count: number
+  last_error: string | null
 }
 
 export interface HookInstallReport {
+  claude: AgentHookInstallReport
+  codex: AgentHookInstallReport
+}
+
+export interface AgentHookInstallReport {
+  agent: AgentName
   script_path: string
   settings_path: string
   added_events: string[]
@@ -32,6 +53,7 @@ export interface ArrangeReport {
 }
 
 export interface ClaudeHistoryEntry {
+  agent: AgentName
   session_id: string
   cwd: string
   project: string

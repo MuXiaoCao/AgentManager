@@ -24,6 +24,7 @@ pub struct SessionEntry {
 pub struct AppState {
     pub sessions: Arc<DashMap<String, SessionEntry>>,
     pub aliases: Arc<DashMap<String, String>>,
+    hidden_history: Arc<DashMap<String, ()>>,
 }
 
 impl AppState {
@@ -35,10 +36,21 @@ impl AppState {
         let this = Self {
             sessions: Arc::new(DashMap::new()),
             aliases: Arc::new(DashMap::new()),
+            hidden_history: Arc::new(DashMap::new()),
         };
         this.load_sessions();
         this.load_aliases();
+        this.load_hidden_history();
         this
+    }
+
+    #[cfg(test)]
+    fn new_empty_for_test() -> Self {
+        Self {
+            sessions: Arc::new(DashMap::new()),
+            aliases: Arc::new(DashMap::new()),
+            hidden_history: Arc::new(DashMap::new()),
+        }
     }
 
     pub fn list_sessions(&self) -> Vec<SessionEntry> {
@@ -94,6 +106,9 @@ impl AppState {
 
     pub fn upsert_from_notify(&self, payload: NotifyPayload) -> SessionEntry {
         let now = Utc::now();
+        if self.hidden_history.remove(&payload.session_id).is_some() {
+            let _ = self.save_hidden_history();
+        }
 
         // A fresh SessionStart in a given iTerm terminal replaces whatever
         // was previously running there: one shell can only host one Claude
@@ -130,7 +145,7 @@ impl AppState {
         }
 
         // Try to get a preview from the session's JSONL file.
-        let preview = Self::read_session_preview(&payload.session_id, &payload.cwd);
+        let preview = Self::read_session_preview(&payload.agent, &payload.session_id, &payload.cwd);
 
         let entry = self
             .sessions
@@ -156,7 +171,11 @@ impl AppState {
                 iterm_session_id: payload.iterm_session_id.clone(),
                 last_event: payload.event_type.clone(),
                 last_updated: now,
-                notification_count: if payload.event_type == "notification" { 1 } else { 0 },
+                notification_count: if payload.event_type == "notification" {
+                    1
+                } else {
+                    0
+                },
                 alias: None,
                 preview: preview.clone(),
             })
@@ -167,9 +186,15 @@ impl AppState {
 
     pub fn dismiss(&self, session_id: &str) -> bool {
         let removed = self.sessions.remove(session_id).is_some();
+        // A Codex fallback card may be synthesized from history at read time,
+        // so it does not necessarily exist in `sessions`. Always persist the
+        // hidden marker, even when there was no in-memory entry to remove.
+        // A later real hook event clears this marker in upsert_from_notify.
+        self.hidden_history.insert(session_id.to_string(), ());
         if removed {
             let _ = self.save_sessions();
         }
+        let _ = self.save_hidden_history();
         removed
     }
 
@@ -184,10 +209,12 @@ impl AppState {
         for sid in &ended {
             self.sessions.remove(sid);
             self.aliases.remove(sid);
+            self.hidden_history.insert(sid.clone(), ());
         }
         if !ended.is_empty() {
             let _ = self.save_sessions();
             let _ = self.save_aliases();
+            let _ = self.save_hidden_history();
         }
     }
 
@@ -195,11 +222,27 @@ impl AppState {
     pub fn delete_session(&self, session_id: &str) -> bool {
         let removed = self.sessions.remove(session_id).is_some();
         self.aliases.remove(session_id);
+        self.hidden_history.insert(session_id.to_string(), ());
         if removed {
             let _ = self.save_sessions();
-            let _ = self.save_aliases();
         }
+        let _ = self.save_aliases();
+        let _ = self.save_hidden_history();
         removed
+    }
+
+    pub fn is_history_hidden(&self, session_id: &str) -> bool {
+        self.hidden_history.contains_key(session_id)
+    }
+
+    pub fn hide_history_sessions(&self, session_ids: &[String]) {
+        if session_ids.is_empty() {
+            return;
+        }
+        for session_id in session_ids {
+            self.hidden_history.insert(session_id.clone(), ());
+        }
+        let _ = self.save_hidden_history();
     }
 
     pub fn set_alias(&self, session_id: &str, alias: Option<String>) {
@@ -223,8 +266,12 @@ impl AppState {
     }
 
     fn load_aliases(&self) {
-        let Some(path) = Self::aliases_path() else { return };
-        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let Some(path) = Self::aliases_path() else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
         let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text)
         else {
             return;
@@ -246,9 +293,53 @@ impl AppState {
         let map: serde_json::Map<String, serde_json::Value> = self
             .aliases
             .iter()
-            .map(|r| (r.key().clone(), serde_json::Value::String(r.value().clone())))
+            .map(|r| {
+                (
+                    r.key().clone(),
+                    serde_json::Value::String(r.value().clone()),
+                )
+            })
             .collect();
         std::fs::write(&path, serde_json::to_string_pretty(&map)?)?;
+        Ok(())
+    }
+
+    fn hidden_history_path() -> Option<std::path::PathBuf> {
+        let mut p = dirs::config_dir()?;
+        p.push("agent-manager");
+        p.push("hidden_history.json");
+        Some(p)
+    }
+
+    fn load_hidden_history(&self) {
+        let Some(path) = Self::hidden_history_path() else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let Ok(ids) = serde_json::from_str::<Vec<String>>(&text) else {
+            return;
+        };
+        for id in ids {
+            self.hidden_history.insert(id, ());
+        }
+    }
+
+    fn save_hidden_history(&self) -> anyhow::Result<()> {
+        let Some(path) = Self::hidden_history_path() else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut ids: Vec<String> = self
+            .hidden_history
+            .iter()
+            .map(|r| r.key().clone())
+            .collect();
+        ids.sort();
+        std::fs::write(&path, serde_json::to_string_pretty(&ids)?)?;
         Ok(())
     }
 
@@ -257,22 +348,33 @@ impl AppState {
     /// Read a preview of recent activity from the session's JSONL file.
     /// Searches ALL project dirs for the session_id (because the project
     /// directory encoding doesn't always match the session's cwd).
-    fn read_session_preview(session_id: &str, _cwd: &str) -> String {
+    fn read_session_preview(agent: &str, session_id: &str, cwd: &str) -> String {
+        if agent == "codex" {
+            return Self::read_codex_session_preview(session_id);
+        }
+        Self::read_claude_session_preview(session_id, cwd)
+    }
+
+    fn read_claude_session_preview(session_id: &str, _cwd: &str) -> String {
         use std::io::{Read, Seek, SeekFrom};
 
-        let Some(home) = dirs::home_dir() else { return String::new() };
+        let Some(home) = dirs::home_dir() else {
+            return String::new();
+        };
         let projects_dir = home.join(".claude").join("projects");
         let filename = format!("{}.jsonl", session_id);
 
         // Search all project directories for this session's JSONL.
-        let jsonl_path = std::fs::read_dir(&projects_dir)
-            .ok()
-            .and_then(|entries| {
-                entries.flatten().find_map(|e| {
-                    let p = e.path().join(&filename);
-                    if p.exists() { Some(p) } else { None }
-                })
-            });
+        let jsonl_path = std::fs::read_dir(&projects_dir).ok().and_then(|entries| {
+            entries.flatten().find_map(|e| {
+                let p = e.path().join(&filename);
+                if p.exists() {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+        });
 
         let Some(jsonl_path) = jsonl_path else {
             return String::new();
@@ -310,18 +412,17 @@ impl AppState {
             let content = obj.pointer("/message/content");
             let text = match content {
                 Some(serde_json::Value::String(s)) => s.clone(),
-                Some(serde_json::Value::Array(arr)) => {
-                    arr.iter()
-                        .filter_map(|c| {
-                            if c.get("type")?.as_str()? == "text" {
-                                Some(c.get("text")?.as_str()?.to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .next()
-                        .unwrap_or_default()
-                }
+                Some(serde_json::Value::Array(arr)) => arr
+                    .iter()
+                    .filter_map(|c| {
+                        if c.get("type")?.as_str()? == "text" {
+                            Some(c.get("text")?.as_str()?.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+                    .unwrap_or_default(),
                 _ => continue,
             };
             let trimmed = text.trim();
@@ -338,6 +439,107 @@ impl AppState {
         last_preview
     }
 
+    fn read_codex_session_preview(session_id: &str) -> String {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let Some(home) = dirs::home_dir() else {
+            return String::new();
+        };
+        let sessions_dir = home.join(".codex").join("sessions");
+        let Some(jsonl_path) = Self::find_codex_session_file(&sessions_dir, session_id) else {
+            return String::new();
+        };
+
+        let Ok(mut file) = std::fs::File::open(&jsonl_path) else {
+            return String::new();
+        };
+        let Ok(meta) = file.metadata() else {
+            return String::new();
+        };
+        let file_size = meta.len();
+        let read_from = file_size.saturating_sub(32768);
+        let _ = file.seek(SeekFrom::Start(read_from));
+        let mut buf = String::new();
+        let _ = file.read_to_string(&mut buf);
+
+        for line in buf.lines().rev() {
+            let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let text = match obj.get("type").and_then(|v| v.as_str()) {
+                Some("event_msg") => {
+                    let payload = obj.get("payload");
+                    let kind = payload
+                        .and_then(|p| p.get("type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if kind != "user_message" && kind != "agent_message" {
+                        continue;
+                    }
+                    payload
+                        .and_then(|p| p.get("message"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                }
+                Some("response_item") => {
+                    let payload = obj.get("payload");
+                    if payload.and_then(|p| p.get("type")).and_then(|v| v.as_str())
+                        != Some("message")
+                    {
+                        continue;
+                    }
+                    payload
+                        .and_then(|p| p.get("content"))
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| {
+                            arr.iter().find_map(|item| {
+                                if item.get("type")?.as_str()? == "output_text" {
+                                    item.get("text")?.as_str()
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .unwrap_or("")
+                        .to_string()
+                }
+                _ => continue,
+            };
+            let trimmed = text.trim();
+            if trimmed.len() > 5 {
+                let max_len = 200;
+                return if trimmed.len() > max_len {
+                    format!("{}…", &trimmed[..trimmed.floor_char_boundary(max_len)])
+                } else {
+                    trimmed.to_string()
+                };
+            }
+        }
+        String::new()
+    }
+
+    fn find_codex_session_file(
+        dir: &std::path::Path,
+        session_id: &str,
+    ) -> Option<std::path::PathBuf> {
+        let entries = std::fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(found) = Self::find_codex_session_file(&path, session_id) {
+                    return Some(found);
+                }
+            } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if name.contains(session_id) {
+                    return Some(path);
+                }
+            }
+        }
+        None
+    }
+
     pub fn save_sessions_pub(&self) -> anyhow::Result<()> {
         self.save_sessions()
     }
@@ -350,8 +552,12 @@ impl AppState {
     }
 
     fn load_sessions(&self) {
-        let Some(path) = Self::sessions_path() else { return };
-        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let Some(path) = Self::sessions_path() else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
         let Ok(entries) = serde_json::from_str::<Vec<SessionEntry>>(&text) else {
             return;
         };
@@ -368,11 +574,8 @@ impl AppState {
             std::fs::create_dir_all(parent)?;
         }
         // Collect and sort newest-first, then truncate to MAX_HISTORY.
-        let mut entries: Vec<SessionEntry> = self
-            .sessions
-            .iter()
-            .map(|r| r.value().clone())
-            .collect();
+        let mut entries: Vec<SessionEntry> =
+            self.sessions.iter().map(|r| r.value().clone()).collect();
         entries.sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
         entries.truncate(Self::MAX_HISTORY);
         std::fs::write(&path, serde_json::to_string_pretty(&entries)?)?;
@@ -407,7 +610,7 @@ mod tests {
 
     #[test]
     fn sessionstart_in_same_iterm_replaces_old_card() {
-        let state = AppState::new();
+        let state = AppState::new_empty_for_test();
         state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/worktree-a"));
         // Same iterm_session_id, different session → A should be evicted.
         state.upsert_from_notify(payload("B", "iterm1", "sessionstart", "/w/worktree-b"));
@@ -420,7 +623,7 @@ mod tests {
 
     #[test]
     fn sessionstart_in_different_iterms_does_not_dedupe() {
-        let state = AppState::new();
+        let state = AppState::new_empty_for_test();
         state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/a"));
         state.upsert_from_notify(payload("B", "iterm2", "sessionstart", "/w/b"));
 
@@ -430,7 +633,7 @@ mod tests {
 
     #[test]
     fn intermediate_stop_event_does_not_dedupe() {
-        let state = AppState::new();
+        let state = AppState::new_empty_for_test();
         state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/a"));
         // A hypothetical sibling in the same pane with a non-start event
         // should not cause A to be removed.
@@ -442,12 +645,23 @@ mod tests {
 
     #[test]
     fn unknown_iterm_id_does_not_dedupe() {
-        let state = AppState::new();
+        let state = AppState::new_empty_for_test();
         state.upsert_from_notify(payload("A", "unknown", "sessionstart", "/w/a"));
         state.upsert_from_notify(payload("B", "unknown", "sessionstart", "/w/b"));
 
         // Both should exist; "unknown" means we can't claim they share a pane.
         let sessions = state.list_sessions();
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn sessionend_moves_active_session_out_of_active_state() {
+        let state = AppState::new_empty_for_test();
+        state.upsert_from_notify(payload("A", "iterm1", "sessionstart", "/w/a"));
+        state.upsert_from_notify(payload("A", "iterm1", "sessionend", "/w/a"));
+
+        let sessions = state.list_sessions();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].last_event, "sessionend");
     }
 }

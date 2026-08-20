@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { ContextMenu, type MenuItem } from './ContextMenu'
-import type { ClaudeHistoryEntry } from '../types'
+import type { AgentName, ClaudeHistoryEntry } from '../types'
 
 interface Props {
-  onReopen: (sessionId: string, cwd: string) => void
+  agent: AgentName
+  onReopen: (sessionId: string, cwd: string, agent: AgentName) => void
   showToast: (text: string) => void
 }
 
@@ -37,7 +38,7 @@ function cwdShort(cwd: string): string {
   return cwd.replace(/^\/Users\/[^/]+\//, '~/').replace(/^\/home\/[^/]+\//, '~/')
 }
 
-export function ClaudeHistoryList({ onReopen, showToast }: Props) {
+export function ClaudeHistoryList({ agent, onReopen, showToast }: Props) {
   const { t } = useTranslation()
   const [entries, setEntries] = useState<ClaudeHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,13 +53,13 @@ export function ClaudeHistoryList({ onReopen, showToast }: Props) {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      setEntries(await invoke<ClaudeHistoryEntry[]>('list_claude_sessions'))
+      setEntries(await invoke<ClaudeHistoryEntry[]>('list_agent_sessions', { agent }))
     } catch (err) {
       showToast(String(err))
     } finally {
       setLoading(false)
     }
-  }, [showToast])
+  }, [agent, showToast])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -105,7 +106,7 @@ export function ClaudeHistoryList({ onReopen, showToast }: Props) {
         {
           id: 'reopen',
           label: t('menu.reopen'),
-          onSelect: () => onReopen(e.session_id, e.cwd || e.project),
+          onSelect: () => onReopen(e.session_id, e.cwd || e.project, e.agent),
         },
       ]
       setMenu({ x: ev.clientX, y: ev.clientY, items })
@@ -132,14 +133,14 @@ export function ClaudeHistoryList({ onReopen, showToast }: Props) {
         <input
           className="history-list__search"
           type="text"
-          placeholder={t('claudeHistory.search')}
+          placeholder={t('agentHistory.search', { agent: t(`agent.${agent}`) })}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
         <button
           className="toolbar-btn"
           onClick={refresh}
-          title={t('claudeHistory.refresh')}
+          title={t('agentHistory.refresh')}
         >
           ↻
         </button>
@@ -147,11 +148,15 @@ export function ClaudeHistoryList({ onReopen, showToast }: Props) {
 
       {loading ? (
         <div className="empty">
-          <p>{t('claudeHistory.loading')}</p>
+          <p>{t('agentHistory.loading', { agent: t(`agent.${agent}`) })}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="empty">
-          <p>{filter ? t('claudeHistory.noMatch') : t('claudeHistory.empty')}</p>
+          <p>
+            {filter
+              ? t('agentHistory.noMatch')
+              : t('agentHistory.empty', { agent: t(`agent.${agent}`) })}
+          </p>
         </div>
       ) : (
         <div className="history-list__items">
@@ -164,10 +169,10 @@ export function ClaudeHistoryList({ onReopen, showToast }: Props) {
                 key={e.session_id}
                 className="hcard"
                 onClick={() => {
-                  if (!isRenaming) onReopen(e.session_id, e.cwd || e.project)
+                  if (!isRenaming) onReopen(e.session_id, e.cwd || e.project, e.agent)
                 }}
                 onContextMenu={(ev) => openMenu(e, ev)}
-                title={t('claudeHistory.clickToResume')}
+                title={t('agentHistory.clickToResume')}
               >
                 <div className="hcard__top">
                   {isRenaming ? (

@@ -16,10 +16,12 @@ pub fn run() {
         .init();
 
     let app_state = AppState::new();
+    let http_health = http_server::HttpServerHealth::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(app_state.clone())
+        .manage(http_health.clone())
         .invoke_handler(tauri::generate_handler![
             commands::get_sessions,
             commands::dismiss_session,
@@ -32,11 +34,14 @@ pub fn run() {
             commands::jump_to_iterm,
             commands::arrange_iterm_windows,
             commands::list_claude_sessions,
+            commands::list_agent_sessions,
             commands::check_hook_config,
             commands::install_claude_hook,
+            commands::install_agent_hooks,
+            commands::get_http_server_status,
         ])
         .setup(move |app| {
-            http_server::spawn(app_state.clone(), app.handle().clone());
+            http_server::spawn(app_state.clone(), app.handle().clone(), http_health.clone());
 
             if let Some(window) = app.get_webview_window("main") {
                 if let Err(err) = dock_main_window_to_left(&window) {

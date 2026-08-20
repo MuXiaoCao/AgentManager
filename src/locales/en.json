@@ -1,7 +1,12 @@
 {
   "tabs": {
     "dashboard": "Dashboard",
-    "claudeHistory": "Claude History"
+    "claudeHistory": "Claude History",
+    "codexHistory": "Codex History"
+  },
+  "agent": {
+    "claude": "Claude",
+    "codex": "Codex"
   },
   "claudeHistory": {
     "search": "Search sessions…",
@@ -11,14 +16,26 @@
     "empty": "No Claude sessions found on disk.",
     "clickToResume": "Click to resume this session in a new iTerm window"
   },
+  "agentHistory": {
+    "search": "Search {{agent}} sessions…",
+    "refresh": "Refresh",
+    "loading": "Scanning {{agent}} sessions…",
+    "noMatch": "No sessions match the filter.",
+    "empty": "No {{agent}} sessions found on disk.",
+    "clickToResume": "Click to resume this session in a new iTerm window"
+  },
   "app": {
     "title": "AgentManager",
     "arrangeButton": "▦ Arrange",
     "arrangeButtonTitle": "Arrange all iTerm windows into a grid"
   },
   "empty": {
-    "title": "No active Claude sessions.",
-    "hint": "Start a <1>claude</1> session in iTerm and it will appear here."
+    "title": "No active agent sessions.",
+    "hint": "Start a <1>claude</1> or <3>codex</3> session in iTerm and it will appear here."
+  },
+  "active": {
+    "title": "In Use",
+    "empty": "No sessions are in use. Start claude or codex and they will appear here."
   },
   "card": {
     "tooltip": "Click to jump to iTerm · right-click for actions",
@@ -52,16 +69,22 @@
   },
   "history": {
     "title": "History",
+    "empty": "No historical sessions yet.",
     "clearAll": "Clear all"
   },
   "banner": {
-    "notInstalled": "Claude hook not fully installed.",
+    "notInstalled": "Agent hooks are not fully installed.",
     "missingEvents": "Missing events: {{events}}",
-    "scriptMissing": "Hook script and settings.json entries are missing.",
+    "scriptMissing": "Hook script or config entries are missing.",
+    "hooksDisabled": "Codex hooks are disabled in config.toml.",
     "install": "Install hook"
   },
+  "server": {
+    "unavailable": "Session collection is temporarily unavailable.",
+    "retrying": "Recovering automatically ({{count}} retries); agent events may be missed meanwhile."
+  },
   "toast": {
-    "installed": "Hook installed. Restart running Claude sessions to activate.",
+    "installed": "Hooks installed. Restart running agent sessions to activate.",
     "installFailed": "Install failed: {{err}}",
     "jumpFailed": "Jump failed: {{err}}",
     "arrangeFailed": "Arrange failed: {{err}}",

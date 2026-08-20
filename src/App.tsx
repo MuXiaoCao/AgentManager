@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useTranslation, Trans } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import {
   DndContext,
   closestCenter,
@@ -22,22 +22,38 @@ import { SetupBanner } from './components/SetupBanner'
 import { ClaudeHistoryList } from './components/ClaudeHistoryList'
 import { currentLanguage, toggleLanguage } from './i18n'
 import { getTheme, toggleTheme, type Theme } from './theme'
-import type { ArrangeReport, HookStatus, SessionEntry } from './types'
+import type {
+  AgentName,
+  ArrangeReport,
+  HookStatus,
+  HttpServerStatus,
+  SessionEntry,
+} from './types'
 
-type Tab = 'dashboard' | 'claude-history'
+type Tab = 'dashboard' | 'claude-history' | 'codex-history'
 
-const REQUIRED_EVENTS = [
-  'SessionStart',
-  'UserPromptSubmit',
-  'Stop',
-  'Notification',
-  'SessionEnd',
-]
+const REQUIRED_EVENTS: Record<AgentName, string[]> = {
+  claude: [
+    'SessionStart',
+    'UserPromptSubmit',
+    'Stop',
+    'Notification',
+    'SessionEnd',
+  ],
+  codex: [
+    'SessionStart',
+    'UserPromptSubmit',
+    'PermissionRequest',
+    'Stop',
+    'SessionEnd',
+  ],
+}
 
 export default function App() {
   const { t, i18n } = useTranslation()
   const [sessions, setSessions] = useState<SessionEntry[]>([])
   const [hookStatus, setHookStatus] = useState<HookStatus | null>(null)
+  const [httpStatus, setHttpStatus] = useState<HttpServerStatus | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [menu, setMenu] = useState<{
     x: number
@@ -84,6 +100,24 @@ export default function App() {
   }, [refreshSessions, refreshHookStatus])
 
   useEffect(() => {
+    let disposed = false
+    const refresh = async () => {
+      try {
+        const status = await invoke<HttpServerStatus>('get_http_server_status')
+        if (!disposed) setHttpStatus(status)
+      } catch (err) {
+        console.error('get_http_server_status failed', err)
+      }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 3000)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
     const onChange = (next: string) =>
       setLang(next.startsWith('zh') ? 'zh' : 'en')
     i18n.on('languageChanged', onChange)
@@ -92,10 +126,15 @@ export default function App() {
 
   const hookInstalled = useMemo(() => {
     if (!hookStatus) return true
-    return (
-      hookStatus.script_installed &&
-      REQUIRED_EVENTS.every((e) => hookStatus.installed_events.includes(e))
-    )
+    return (Object.keys(REQUIRED_EVENTS) as AgentName[]).every((agent) => {
+      const status = hookStatus[agent]
+      return (
+        status.script_installed &&
+        status.settings_exists &&
+        status.hooks_enabled &&
+        REQUIRED_EVENTS[agent].every((e) => status.installed_events.includes(e))
+      )
+    })
   }, [hookStatus])
 
   // Split into active vs ended (history).
@@ -104,7 +143,14 @@ export default function App() {
     [sessions]
   )
   const historySessions = useMemo(
-    () => sessions.filter((s) => s.last_event === 'sessionend'),
+    () =>
+      sessions
+        .filter((s) => s.last_event === 'sessionend')
+        .sort(
+          (a, b) =>
+            new Date(b.last_updated).getTime() -
+            new Date(a.last_updated).getTime()
+        ),
     [sessions]
   )
 
@@ -112,7 +158,7 @@ export default function App() {
 
   const handleInstallHook = useCallback(async () => {
     try {
-      await invoke('install_claude_hook')
+      await invoke('install_agent_hooks')
       showToast(t('toast.installed'))
       refreshHookStatus()
     } catch (err) {
@@ -351,15 +397,16 @@ export default function App() {
   }, [])
 
   const handleClaudeHistoryReopen = useCallback(
-    async (sessionId: string, cwd: string) => {
+    async (sessionId: string, cwd: string, agent: AgentName) => {
       try {
-        await invoke('reopen_session', { sessionId, cwd })
+        await invoke('reopen_session', { sessionId, cwd, agent })
+        await refreshSessions()
         showToast(t('toast.reopened'))
       } catch (err) {
         showToast(t('toast.reopenFailed', { err: String(err) }))
       }
     },
-    [showToast, t]
+    [refreshSessions, showToast, t]
   )
 
   // ─── render ───────────────────────────────────────────────────────
@@ -380,6 +427,22 @@ export default function App() {
     />
   )
 
+  const renderActiveCard = (s: SessionEntry) => (
+    <SortableCard
+      key={s.session_id}
+      entry={s}
+      isRenaming={renamingId === s.session_id}
+      isSelected={selectedId === s.session_id}
+      isFlashing={flashingId === s.session_id}
+      onClick={() => handleCardSingleClick(s)}
+      onContextMenu={(ev) => openMenu(s, ev)}
+      onDoubleClick={() => handleCardSingleClick(s)}
+      onCommitRename={(alias) => handleCommitRename(s.session_id, alias)}
+      onCancelRename={handleCancelRename}
+      onClose={() => handleDismiss(s.session_id)}
+    />
+  )
+
   return (
     <div className="app">
       <header className="app__header">
@@ -395,6 +458,12 @@ export default function App() {
             onClick={() => setTab('claude-history')}
           >
             {t('tabs.claudeHistory')}
+          </button>
+          <button
+            className={`app__tab ${tab === 'codex-history' ? 'app__tab--active' : ''}`}
+            onClick={() => setTab('codex-history')}
+          >
+            {t('tabs.codexHistory')}
           </button>
         </div>
         <div className="app__header-actions">
@@ -430,74 +499,74 @@ export default function App() {
         <SetupBanner status={hookStatus} onInstall={handleInstallHook} />
       )}
 
+      {tab === 'dashboard' && httpStatus && !httpStatus.healthy && httpStatus.retry_count > 0 && (
+        <div className="setup-banner setup-banner--error" role="status">
+          <div className="setup-banner__text">
+            <strong>{t('server.unavailable')}</strong>{' '}
+            {t('server.retrying', { count: httpStatus.retry_count })}
+          </div>
+        </div>
+      )}
+
       {tab === 'dashboard' && (
         <main className="app__main">
-          {sessions.length === 0 ? (
-            <div className="empty">
-              <p>{t('empty.title')}</p>
-              <p className="empty__hint">
-                <Trans i18nKey="empty.hint">
-                  Start a <code>claude</code> session in iTerm and it will
-                  appear here.
-                </Trans>
-              </p>
+          <section>
+            <div className="section-header">
+              <h2 className="section-title">{t('active.title')}</h2>
             </div>
-          ) : (
-            <>
-              {activeSessions.length > 0 && (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleSortEnd}
+            {activeSessions.length > 0 ? (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleSortEnd}
+              >
+                <SortableContext
+                  items={activeSessions.map((s) => s.session_id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <SortableContext
-                    items={activeSessions.map((s) => s.session_id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <section>
-                      {activeSessions.map((s) => (
-                        <SortableCard
-                          key={s.session_id}
-                          entry={s}
-                          isRenaming={renamingId === s.session_id}
-                          isSelected={selectedId === s.session_id}
-                          isFlashing={flashingId === s.session_id}
-                          onClick={() => handleCardSingleClick(s)}
-                          onContextMenu={(ev) => openMenu(s, ev)}
-                          onDoubleClick={() => handleCardSingleClick(s)}
-                          onCommitRename={(alias) =>
-                            handleCommitRename(s.session_id, alias)
-                          }
-                          onCancelRename={handleCancelRename}
-                          onClose={() => handleDismiss(s.session_id)}
-                        />
-                      ))}
-                    </section>
-                  </SortableContext>
-                </DndContext>
-              )}
+                  {activeSessions.map(renderActiveCard)}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <div className="section-empty">{t('active.empty')}</div>
+            )}
+          </section>
+
+          <section>
+            <div className="section-header">
+              <h2 className="section-title">{t('history.title')}</h2>
               {historySessions.length > 0 && (
-                <section>
-                  <div className="section-header">
-                    <h2 className="section-title">{t('history.title')}</h2>
-                    <button
-                      className="toolbar-btn toolbar-btn--sm toolbar-btn--danger"
-                      onClick={handleClearHistory}
-                    >
-                      {t('history.clearAll')}
-                    </button>
-                  </div>
-                  {historySessions.map(renderHistoryCard)}
-                </section>
+                <button
+                  className="toolbar-btn toolbar-btn--sm toolbar-btn--danger"
+                  onClick={handleClearHistory}
+                >
+                  {t('history.clearAll')}
+                </button>
               )}
-            </>
-          )}
+            </div>
+            {historySessions.length > 0 ? (
+              historySessions.map(renderHistoryCard)
+            ) : (
+              <div className="section-empty">{t('history.empty')}</div>
+            )}
+          </section>
         </main>
       )}
 
       {tab === 'claude-history' && (
         <main className="app__main">
           <ClaudeHistoryList
+            agent="claude"
+            onReopen={handleClaudeHistoryReopen}
+            showToast={showToast}
+          />
+        </main>
+      )}
+
+      {tab === 'codex-history' && (
+        <main className="app__main">
+          <ClaudeHistoryList
+            agent="codex"
             onReopen={handleClaudeHistoryReopen}
             showToast={showToast}
           />

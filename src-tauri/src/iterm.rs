@@ -24,8 +24,8 @@ fn run_osascript(script: &str) -> Result<String> {
 /// commands that require Accessibility.
 #[cfg(target_os = "macos")]
 fn run_applescript_inline(source: &str) -> Result<String> {
-    use objc::{class, msg_send, sel, sel_impl};
     use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
     use std::ffi::{CStr, CString};
 
     let source_c = CString::new(source).context("script contains null byte")?;
@@ -48,14 +48,12 @@ fn run_applescript_inline(source: &str) -> Result<String> {
         // NSDictionary *error = nil;
         // NSAppleEventDescriptor *result = [script executeAndReturnError:&error];
         let mut error_dict: *mut Object = std::ptr::null_mut();
-        let result: *mut Object =
-            msg_send![script_obj, executeAndReturnError: &mut error_dict];
+        let result: *mut Object = msg_send![script_obj, executeAndReturnError: &mut error_dict];
 
         if result.is_null() {
             // Extract error message from the NSDictionary.
             let err_msg = if !error_dict.is_null() {
-                let key: *mut Object =
-                    msg_send![class!(NSString), stringWithUTF8String: b"NSAppleScriptErrorMessage\0".as_ptr()];
+                let key: *mut Object = msg_send![class!(NSString), stringWithUTF8String: b"NSAppleScriptErrorMessage\0".as_ptr()];
                 let msg_ns: *mut Object = msg_send![error_dict, objectForKey: key];
                 if !msg_ns.is_null() {
                     let cstr: *const std::os::raw::c_char = msg_send![msg_ns, UTF8String];
@@ -161,24 +159,34 @@ end tell
 
 // ── reopen ──────────────────────────────────────────────────────────
 
-pub fn reopen_session(cwd: &str, claude_session_id: &str) -> Result<()> {
+pub fn reopen_session(cwd: &str, session_id: &str, agent: &str) -> Result<String> {
     let safe_cwd = cwd.replace('\'', "'\\''");
-    let safe_id = claude_session_id.replace('\'', "'\\''");
+    let safe_id = session_id.replace('\'', "'\\''");
+    let command = if agent == "codex" {
+        format!("codex resume --cd '{}' '{}'", safe_cwd, safe_id)
+    } else {
+        format!("cd '{}' && claude --resume '{}'", safe_cwd, safe_id)
+    };
+    let safe_command = command.replace('"', "\\\"");
     let script = format!(
         r#"
 tell application "iTerm"
-  create window with default profile
-  tell current session of current tab of current window
-    write text "cd '{cwd}' && claude --resume '{sid}'"
+  set newWindow to (create window with default profile)
+  set newSession to current session of current tab of newWindow
+  tell newSession
+    write text "{command}"
   end tell
+  return unique id of newSession
 end tell
 "#,
-        cwd = safe_cwd,
-        sid = safe_id,
+        command = safe_command,
     );
-    run_osascript(&script)?;
+    let iterm_session_id = run_osascript(&script)?.trim().to_string();
+    if is_blank(&iterm_session_id) {
+        return Err(anyhow!("iTerm did not return the new session id"));
+    }
     let _ = Command::new("open").args(["-a", "iTerm"]).status();
-    Ok(())
+    Ok(iterm_session_id)
 }
 
 // ── arrange ─────────────────────────────────────────────────────────
@@ -200,9 +208,9 @@ pub struct TileRegion {
 /// calls return true immediately without any dialog.
 #[cfg(target_os = "macos")]
 fn ensure_accessibility() -> bool {
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::ffi::c_void;
     use std::ptr;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     static GRANTED: AtomicBool = AtomicBool::new(false);
     static PROMPTED: AtomicBool = AtomicBool::new(false);
@@ -220,16 +228,20 @@ fn ensure_accessibility() -> bool {
     #[link(name = "CoreFoundation", kind = "framework")]
     extern "C" {
         fn CFDictionaryCreate(
-            alloc: *const c_void, keys: *const *const c_void,
-            values: *const *const c_void, count: isize,
-            kcb: *const c_void, vcb: *const c_void,
+            alloc: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            count: isize,
+            kcb: *const c_void,
+            vcb: *const c_void,
         ) -> *const c_void;
         static kCFTypeDictionaryKeyCallBacks: c_void;
         static kCFTypeDictionaryValueCallBacks: c_void;
         static kCFBooleanTrue: *const c_void;
-        static kCFBooleanFalse: *const c_void;
         fn CFStringCreateWithCString(
-            alloc: *const c_void, cstr: *const u8, enc: u32,
+            alloc: *const c_void,
+            cstr: *const u8,
+            enc: u32,
         ) -> *const c_void;
         fn CFRelease(cf: *const c_void);
     }
@@ -247,13 +259,19 @@ fn ensure_accessibility() -> bool {
         }
 
         let key = CFStringCreateWithCString(
-            ptr::null(), b"AXTrustedCheckOptionPrompt\0".as_ptr(), 0x08000100,
+            ptr::null(),
+            b"AXTrustedCheckOptionPrompt\0".as_ptr(),
+            0x08000100,
         );
         let keys = [key];
         let values = [kCFBooleanTrue];
         let dict = CFDictionaryCreate(
-            ptr::null(), keys.as_ptr(), values.as_ptr(), 1,
-            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks,
+            ptr::null(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks,
         );
         let result = AXIsProcessTrustedWithOptions(dict);
         CFRelease(dict);

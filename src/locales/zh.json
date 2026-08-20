@@ -1,7 +1,12 @@
 {
   "tabs": {
     "dashboard": "面板",
-    "claudeHistory": "Claude 历史"
+    "claudeHistory": "Claude 历史",
+    "codexHistory": "Codex 历史"
+  },
+  "agent": {
+    "claude": "Claude",
+    "codex": "Codex"
   },
   "claudeHistory": {
     "search": "搜索会话…",
@@ -11,14 +16,26 @@
     "empty": "未在本地找到 Claude 会话。",
     "clickToResume": "点击在新 iTerm 窗口中恢复此会话"
   },
+  "agentHistory": {
+    "search": "搜索 {{agent}} 会话…",
+    "refresh": "刷新",
+    "loading": "正在扫描 {{agent}} 会话…",
+    "noMatch": "没有匹配的会话。",
+    "empty": "未在本地找到 {{agent}} 会话。",
+    "clickToResume": "点击在新 iTerm 窗口中恢复此会话"
+  },
   "app": {
     "title": "AgentManager",
     "arrangeButton": "▦ 排列",
     "arrangeButtonTitle": "将所有 iTerm 窗口整理成网格"
   },
   "empty": {
-    "title": "暂无活跃的 Claude 会话",
-    "hint": "在 iTerm 中启动一个 <1>claude</1> 会话，它会自动出现在这里。"
+    "title": "暂无活跃的 agent 会话",
+    "hint": "在 iTerm 中启动一个 <1>claude</1> 或 <3>codex</3> 会话，它会自动出现在这里。"
+  },
+  "active": {
+    "title": "正在使用",
+    "empty": "暂无正在使用的会话。启动 claude 或 codex 后会出现在这里。"
   },
   "card": {
     "tooltip": "点击跳转到对应的 iTerm 会话 · 右键查看操作",
@@ -51,16 +68,22 @@
   },
   "history": {
     "title": "历史会话",
+    "empty": "暂无历史会话。",
     "clearAll": "清空全部"
   },
   "banner": {
-    "notInstalled": "Claude hook 未完全安装。",
+    "notInstalled": "Agent hook 未完全安装。",
     "missingEvents": "缺少事件：{{events}}",
-    "scriptMissing": "Hook 脚本和 settings.json 配置都缺失。",
+    "scriptMissing": "Hook 脚本或配置项缺失。",
+    "hooksDisabled": "Codex hooks 已在 config.toml 中关闭。",
     "install": "一键安装"
   },
+  "server": {
+    "unavailable": "会话采集服务暂时不可用。",
+    "retrying": "正在自动恢复（已重试 {{count}} 次），期间 agent 事件可能无法采集。"
+  },
   "toast": {
-    "installed": "Hook 已安装。请重启正在运行的 Claude 会话以生效。",
+    "installed": "Hook 已安装。请重启正在运行的 agent 会话以生效。",
     "installFailed": "安装失败：{{err}}",
     "jumpFailed": "跳转失败：{{err}}",
     "arrangeFailed": "排列失败：{{err}}",

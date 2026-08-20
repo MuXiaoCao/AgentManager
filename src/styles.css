@@ -198,6 +198,15 @@ body {
   border-radius: 4px;
 }
 
+.section-empty {
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 14px 12px;
+  font-size: 12px;
+}
+
 /* ── session cards ───────────────────────────────────────────── */
 .card {
   position: relative;
@@ -462,6 +471,12 @@ body {
 }
 
 .setup-banner__btn:hover { background: var(--accent-hover); }
+
+.setup-banner--error {
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--text);
+}
 
 /* ── claude history list ─────────────────────────────────────── */
 .history-list {
